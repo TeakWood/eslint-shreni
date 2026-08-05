@@ -4,15 +4,10 @@
   "description": "ESLint JavaScript language implementation",
   "funding": "https://eslint.org/donate",
   "main": "./src/index.js",
-  "types": "./types/index.d.ts",
-  "scripts": {
-    "test:types": "tsc -p tests/types/tsconfig.json"
-  },
   "files": [
     "LICENSE",
     "README.md",
-    "src",
-    "types"
+    "src"
   ],
   "publishConfig": {
     "access": "public"

@@ -20,10 +20,6 @@ const { Linter } = require("../lib/linter");
 // Typedefs
 //------------------------------------------------------------------------------
 
-/** @typedef {import("../lib/types").Linter.LanguageOptions} LanguageOptions */
-/** @typedef {import("../lib/types").Linter.LintMessage} LintMessage */
-/** @typedef {import("../lib/types").ESLint.LintResult} LintResult */
-
 //------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
@@ -49,16 +45,15 @@ const commentParser = new ConfigCommentParser();
 
 /**
  * Validates language options and adds any found issues to the problems array.
- * @param {LanguageOptions} languageOptions The language options to validate.
- * @param {number} lineOffset The line offset for error reporting.
- * @param {LintMessage[]} problems The array to push validation issues to.
- * @returns {void}
+ * @param languageOptions The language options to validate.
+ * @param lineOffset The line offset for error reporting.
+ * @param problems The array to push validation issues to.
  */
 function validateLanguageOptions(languageOptions, lineOffset, problems) {
 	/**
 	 * Creates a lint message for a validation issue.
-	 * @param {string} message The error message.
-	 * @returns {LintMessage} The created lint message object.
+	 * @param message The error message.
+	 * @returns The created lint message object.
 	 */
 	function createLintMessage(message) {
 		return {
@@ -107,8 +102,8 @@ function validateLanguageOptions(languageOptions, lineOffset, problems) {
 
 /**
  * Checks the example code blocks in a rule documentation file.
- * @param {string} filename The file to be checked.
- * @returns {Promise<LintMessage[]>} A promise of problems found. The promise will be rejected if an error occurs.
+ * @param filename The file to be checked.
+ * @returns A promise of problems found. The promise will be rejected if an error occurs.
  */
 async function findProblems(filename) {
 	const text = await readFile(filename, "UTF-8");
@@ -296,8 +291,8 @@ async function findProblems(filename) {
 
 /**
  * Checks the example code blocks in a rule documentation file.
- * @param {string} filename The file to be checked.
- * @returns {Promise<LintResult>} The result of checking the file.
+ * @param filename The file to be checked.
+ * @returns The result of checking the file.
  */
 async function checkFile(filename) {
 	let fatalErrorCount = 0,

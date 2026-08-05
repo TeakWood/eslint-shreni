@@ -17,8 +17,6 @@ const globals = require("globals");
 const eslintConfigESLintCJS = require("eslint-config-eslint/cjs");
 const eslintPluginYml = require("eslint-plugin-yml");
 const json = require("@eslint/json").default;
-const expectType = require("eslint-plugin-expect-type");
-const tsParser = require("@typescript-eslint/parser");
 const {
 	defineConfig,
 	globalIgnores,
@@ -50,8 +48,8 @@ const DEPRECATED_CORE_RULE_FILES = Array.from(coreRules.entries())
 
 /**
  * Resolve an absolute path or glob pattern.
- * @param {string} pathOrPattern the path or glob pattern.
- * @returns {string} The resolved path or glob pattern.
+ * @param pathOrPattern the path or glob pattern.
+ * @returns The resolved path or glob pattern.
  */
 function resolveAbsolutePath(pathOrPattern) {
 	return path.resolve(__dirname, pathOrPattern);
@@ -59,8 +57,8 @@ function resolveAbsolutePath(pathOrPattern) {
 
 /**
  * Create an array of `no-restricted-require` entries for ESLint's core files.
- * @param {string} [pattern] The glob pattern to create the entries for.
- * @returns {Object[]} The array of `no-restricted-require` entries.
+ * @param [pattern] The glob pattern to create the entries for.
+ * @returns The array of `no-restricted-require` entries.
  */
 function createInternalFilesPatterns(pattern = null) {
 	return Object.values(INTERNAL_PATHS)
@@ -76,9 +74,6 @@ function createInternalFilesPatterns(pattern = null) {
 		}));
 }
 
-/**
- * @type {import("./lib/types/index.js").Linter.Config[]}
- */
 module.exports = defineConfig([
 	{
 		name: "eslint/cjs",
@@ -92,7 +87,6 @@ module.exports = defineConfig([
 		[
 			"docs/!(src|tools)/",
 			"docs/src/!(_data)",
-			"lib/types/**/*.ts",
 			"templates/**",
 			"tests/bench/**",
 			"tests/fixtures/**",
@@ -360,26 +354,6 @@ module.exports = defineConfig([
 		...config,
 		files: [ALL_YAML_FILES],
 	})),
-	{
-		name: "eslint/ts-rules",
-		files: ["**/*.{ts,mts,cts}"],
-		languageOptions: {
-			parser: tsParser,
-			parserOptions: {
-				project: [
-					"tests/lib/types/tsconfig.json",
-					"packages/js/tests/types/tsconfig.json",
-					"packages/eslint-config-eslint/tests/types/tsconfig.json",
-				],
-			},
-		},
-		plugins: {
-			"expect-type": expectType,
-		},
-		rules: {
-			"expect-type/expect": "error",
-		},
-	},
 	{
 		name: "eslint/bin",
 		files: ["bin/eslint.js"],

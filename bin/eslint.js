@@ -42,7 +42,7 @@ if (process.argv.includes("--debug")) {
  * > 4096 bytes to the pipe, the pipe becomes full, and Emacs then waits for
  * > the subprocess to read its end of the pipe, at which time Emacs will
  * > write the rest of the stuff.
- * @returns {Promise<string>} The read text.
+ * @returns The read text.
  */
 function readStdin() {
 	return new Promise((resolve, reject) => {
@@ -63,10 +63,9 @@ function readStdin() {
 
 /**
  * Spawns an external command and propagates its exit status.
- * @param {string} command The command to run.
- * @param {string[]} args The command arguments.
- * @throws {Error} If the command cannot be spawned.
- * @returns {void}
+ * @param command The command to run.
+ * @param args The command arguments.
+ * @throws If the command cannot be spawned.
  */
 function spawnExternalCommand(command, args) {
 	const spawn = require("cross-spawn");
@@ -89,8 +88,8 @@ function spawnExternalCommand(command, args) {
 
 /**
  * Get the error message of a given value.
- * @param {any} error The value to get.
- * @returns {string} The error message.
+ * @param error The value to get.
+ * @returns The error message.
  */
 function getErrorMessage(error) {
 	// Lazy loading because this is used only if an error happened.
@@ -124,20 +123,17 @@ function getErrorMessage(error) {
 /**
  * Tracks error messages that are shown to the user so we only ever show the
  * same message once.
- * @type {Set<string>}
  */
 const displayedErrors = new Set();
 
 /**
  * Tracks whether an unexpected error was caught
- * @type {boolean}
  */
 let hadFatalError = false;
 
 /**
  * Catch and report unexpected error.
- * @param {any} error The thrown error object.
- * @returns {void}
+ * @param error The thrown error object.
  */
 function onFatalError(error) {
 	process.exitCode = 2;

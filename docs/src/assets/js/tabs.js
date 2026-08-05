@@ -67,7 +67,7 @@ var util = {
 	 * Browser back should navigate to the previous page
 	 * regardless of how many Tabs were activated.
 	 *
-	 * @param {string} hash
+	 * @param hash
 	 */
 	setUrlHash: function (hash) {
 		if (history.replaceState) {

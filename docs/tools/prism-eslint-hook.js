@@ -26,25 +26,20 @@ try {
 	// ignore
 }
 
-/** @typedef {import("../../lib/types").Linter.LanguageOptions} JSLanguageOptions */
-
 /**
  * Content that needs to be marked with ESLint
- * @type {string|undefined}
  */
 let contentMustBeMarked;
 
 /**
  * Language options received from the `::: incorrect` or `::: correct` container.
- * @type {JSLanguageOptions|undefined}
  */
 let contentLanguageOptions;
 
 /**
  * Set content that needs to be marked.
- * @param {string} content Source code content that marks ESLint errors.
- * @param {JSLanguageOptions} options The options used for validation.
- * @returns {void}
+ * @param content Source code content that marks ESLint errors.
+ * @param options The options used for validation.
  */
 function addContentMustBeMarked(content, options) {
 	contentMustBeMarked = content;
@@ -53,7 +48,6 @@ function addContentMustBeMarked(content, options) {
 
 /**
  * Register a hook for `Prism` to mark errors in ESLint.
- * @returns {void}
  */
 function installPrismESLintMarkerHook() {
 	/**
@@ -74,14 +68,13 @@ function installPrismESLintMarkerHook() {
 
 	/**
 	 * A Map that holds message IDs and messages.
-	 * @type {Map<string, string>}
 	 */
 	const messageMap = new Map();
 
 	/**
 	 * Gets the message ID from the given message.
-	 * @param {string} message Message
-	 * @returns {string} Message ID
+	 * @param message Message
+	 * @returns Message ID
 	 */
 	function getMessageIdFromMessage(message) {
 		let messageId;
@@ -126,10 +119,10 @@ function installPrismESLintMarkerHook() {
 
 		/**
 		 * Converts a (line, column) pair into a range index.
-		 * @param {Object} loc A line/column location
-		 * @param {number} loc.line The line number of the location (1-indexed)
-		 * @param {number} loc.column The column number of the location (1-indexed)
-		 * @returns {number} The range index of the location in the file.
+		 * @param loc A line/column location
+		 * @param loc.line The line number of the location (1-indexed)
+		 * @param loc.column The column number of the location (1-indexed)
+		 * @returns The range index of the location in the file.
 		 * Copied from SourceCode#getIndexFromLoc
 		 */
 		function getIndexFromLoc(loc) {
@@ -174,8 +167,8 @@ function installPrismESLintMarkerHook() {
 
 		/**
 		 * Get the content of the token.
-		 * @param {string | Prism.Token} token The token
-		 * @returns {string} The content of the token
+		 * @param token The token
+		 * @returns The content of the token
 		 */
 		function getTokenContent(token) {
 			if (typeof token === "string") {
@@ -188,22 +181,13 @@ function installPrismESLintMarkerHook() {
 		}
 
 		/**
-		 * @typedef {Object} SplitTokenResult
-		 * @property {string | Prism.Token | null} before The token before the marked range
-		 * @property {Object} marked The marked token information
-		 * @property {Prism.Token} marked.token The token with the marked range
-		 * @property {boolean} marked.canBeMerged If true, it can be merged with previous and subsequent marked tokens.
-		 * @property {string | Prism.Token | null} after The token after the marked range
-		 */
-
-		/**
 		 * Splits the given token into the `eslint-marked` token and the token before and after it with the specified range.
-		 * @param {Object} params Parameters
-		 * @param {string | Prism.Token} params.token Token to be split
-		 * @param {[number, number]} params.range Range to be marked
-		 * @param {string} params.message Report message
-		 * @param {number} params.tokenStart Starting position of the token
-		 * @returns {SplitTokenResult} The split token parts
+		 * @param params Parameters
+		 * @param params.token Token to be split
+		 * @param params.range Range to be marked
+		 * @param params.message Report message
+		 * @param params.tokenStart Starting position of the token
+		 * @returns The split token parts
 		 */
 		function splitToken({ token, range, message, tokenStart }) {
 			const content = getTokenContent(token);
@@ -294,8 +278,8 @@ function installPrismESLintMarkerHook() {
 		 * A line feed character is not displayed because it has no width,
 		 * so by making it a single-character token, the "wrap hook" applies CLASS_ESLINT_MARKED_ON_LINE_FEED
 		 * to each character and makes it visible.
-		 * @param {Prism.Token} token Token to be split
-		 * @returns {IterableIterator<Prism.Token>} An iterator over the split tokens
+		 * @param token Token to be split
+		 * @returns An iterator over the split tokens
 		 */
 		function* splitMarkedTokenByLineFeed(token) {
 			for (const contentToken of [token.content].flat()) {
@@ -348,8 +332,8 @@ function installPrismESLintMarkerHook() {
 
 		/**
 		 * Splits the given tokens at line feed characters.
-		 * @param {Prism.Token[]} tokens Tokens to split
-		 * @returns {IterableIterator<Prism.Token>} An iterator over the split tokens
+		 * @param tokens Tokens to split
+		 * @returns An iterator over the split tokens
 		 */
 		function* splitTokensByLineFeed(tokens) {
 			for (const token of tokens) {
@@ -380,12 +364,12 @@ function installPrismESLintMarkerHook() {
 
 		/**
 		 * Generates a token stream with the `eslint-marked` class assigned to the error range.
-		 * @param {Object} params Parameters
-		 * @param {string | Prism.Token | (string | Prism.Token[])} params.tokens Tokens to be converted
-		 * @param {[number, number]} params.range Range to be marked
-		 * @param {string} params.message Report message
-		 * @param {number} params.tokenStart Starting position of the tokens
-		 * @returns {IterableIterator<string | Prism.Token>} converted tokens
+		 * @param params Parameters
+		 * @param params.tokens Tokens to be converted
+		 * @param params.range Range to be marked
+		 * @param params.message Report message
+		 * @param params.tokenStart Starting position of the tokens
+		 * @returns converted tokens
 		 */
 		function* convertMarked({ tokens, range, message, tokenStart = 0 }) {
 			let start = tokenStart;

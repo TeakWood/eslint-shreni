@@ -48,9 +48,6 @@ jobs:
             - name: Check Rule Examples
               run: node Makefile checkRuleExamples
 
-            - name: Check Rule Types
-              run: npm run lint:rule-types
-
             - name: Lint Files, Dependencies, & Exports
               run: npm run lint:unused
 
@@ -115,36 +112,6 @@ jobs:
               run: node Makefile cypress
             - name: Fuzz Test
               run: node Makefile fuzz
-
-    test_types:
-        name: Test Types
-        runs-on: ubuntu-latest
-
-        steps:
-            - uses: actions/checkout@v7
-            - uses: actions/setup-node@v7
-              with:
-                  node-version: "lts/*"
-            - name: Install Packages
-              run: npm install
-
-            - name: Test types (eslint)
-              run: npx tsc -p tests/lib/types/tsconfig.json
-
-            - name: Test types (eslint-config-eslint)
-              run: npm run test:types -w packages/eslint-config-eslint
-
-            - name: Test types (@eslint/js)
-              run: npm run test:types -w packages/js
-
-            - name: Check types compile (TypeScript 5.3)
-              run: npm run test:types:5.3
-
-            - name: Check types compile (TypeScript 5.x)
-              run: npm run test:types:5.x
-
-            - name: Check types compile (TypeScript 7 preview)
-              run: npm run test:types:7.x
 
     test_package_manager:
         name: Test Package Managers

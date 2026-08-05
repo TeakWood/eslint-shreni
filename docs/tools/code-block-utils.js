@@ -8,8 +8,8 @@
  * Replaces some marks used in the code in the document and converts it into parsable code.
  * The replaced string will be used in the linter,
  * so be careful not to replace characters that change the location of the line and column.
- * @param {string} code The code in the document.
- * @returns {string} The parsable code.
+ * @param code The code in the document.
+ * @returns The parsable code.
  */
 function docsExampleCodeToParsableCode(code) {
 	return (

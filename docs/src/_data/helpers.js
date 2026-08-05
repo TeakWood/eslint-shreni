@@ -4,9 +4,9 @@ module.exports = {
 	/**
 	 * Returns some attributes based on whether the link is active or
 	 * a parent of an active item
-	 * @param {string} itemUrl is the link in question
-	 * @param {string} pageUrl is the page context
-	 * @returns {string} is the attributes or empty
+	 * @param itemUrl is the link in question
+	 * @param pageUrl is the page context
+	 * @returns is the attributes or empty
 	 */
 	getLinkActiveState(itemUrl, pageUrl) {
 		let response = "";

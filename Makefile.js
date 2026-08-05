@@ -94,8 +94,8 @@ const NODE = "node ", // intentional extra space
 
 /**
  * Executes a command and returns the output instead of printing it to stdout.
- * @param {string} cmd The command string to execute.
- * @returns {string} The result of the executed command.
+ * @param cmd The command string to execute.
+ * @returns The result of the executed command.
  */
 function execSilent(cmd) {
 	return exec(cmd, { silent: true }).stdout;
@@ -103,7 +103,7 @@ function execSilent(cmd) {
 
 /**
  * Gets name of the currently checked out Git branch.
- * @returns {string} Name of the currently checked out Git branch.
+ * @returns Name of the currently checked out Git branch.
  */
 function getCurrentGitBranch() {
 	return execSilent("git branch --show-current").trim();
@@ -111,9 +111,8 @@ function getCurrentGitBranch() {
 
 /**
  * Generates a release blog post for eslint.org
- * @param {Object} releaseInfo The release metadata.
- * @param {string} [prereleaseMajorVersion] If this is a prerelease, the next major version after this prerelease
- * @returns {void}
+ * @param releaseInfo The release metadata.
+ * @param [prereleaseMajorVersion] If this is a prerelease, the next major version after this prerelease
  * @private
  */
 function generateBlogPost(releaseInfo, prereleaseMajorVersion) {
@@ -155,7 +154,6 @@ function generateBlogPost(releaseInfo, prereleaseMajorVersion) {
 
 /**
  * Generates a doc page with formatter result examples
- * @returns {void}
  */
 function generateFormatterExamples() {
 	// We don't need the stack trace of execFileSync if the command fails.
@@ -172,7 +170,6 @@ function generateFormatterExamples() {
 
 /**
  * Generate a doc page that lists all of the rules and links to them
- * @returns {void}
  */
 function generateRuleIndexPage() {
 	const docsSiteOutputFile = path.join(DOCS_DATA_DIR, "rules.json"),
@@ -238,8 +235,7 @@ function generateRuleIndexPage() {
 /**
  * Creates a git commit and tag in an adjacent `website` repository, without pushing it to
  * the remote. This assumes that the repository has already been modified somehow (e.g. by adding a blogpost).
- * @param {string} [tag] The string to tag the commit with
- * @returns {void}
+ * @param [tag] The string to tag the commit with
  */
 function commitSiteToGit(tag) {
 	const currentDir = pwd();
@@ -255,7 +251,6 @@ function commitSiteToGit(tag) {
 /**
  * Publishes the changes in an adjacent `eslint.org` repository to the remote. The
  * site should already have local commits (e.g. from running `commitSiteToGit`).
- * @returns {void}
  */
 function publishSite() {
 	const currentDir = pwd();
@@ -267,8 +262,8 @@ function publishSite() {
 
 /**
  * Determines whether the given version is a prerelease.
- * @param {string} version The version to check.
- * @returns {boolean} `true` if it is a prerelease, `false` otherwise.
+ * @param version The version to check.
+ * @returns `true` if it is a prerelease, `false` otherwise.
  */
 function isPreRelease(version) {
 	return /[a-z]/u.test(version);
@@ -276,9 +271,8 @@ function isPreRelease(version) {
 
 /**
  * Updates docs/src/_data/versions.json
- * @param {string} oldVersion Current version.
- * @param {string} newVersion New version to be released.
- * @returns {void}
+ * @param oldVersion Current version.
+ * @param newVersion New version to be released.
  */
 function updateVersions(oldVersion, newVersion) {
 	echo("Updating ESLint versions list in docs package");
@@ -340,30 +334,12 @@ function updateVersions(oldVersion, newVersion) {
 }
 
 /**
- * Updates TSDoc header comments of all rule types.
- * @returns {void}
- */
-function updateRuleTypeHeaders() {
-	// We don't need the stack trace of execFileSync if the command fails.
-	try {
-		childProcess.execFileSync(
-			process.execPath,
-			["tools/update-rule-type-headers.js"],
-			{ stdio: "inherit" },
-		);
-	} catch {
-		exit(1);
-	}
-}
-
-/**
  * Updates the changelog, bumps the version number in package.json, creates a local git commit and tag,
  * and generates the site in an adjacent `website` folder.
- * @param {Object} options Release options.
- * @param {string} [options.prereleaseId] The prerelease identifier (alpha, beta, etc.). If `undefined`, this is
+ * @param options Release options.
+ * @param [options.prereleaseId] The prerelease identifier (alpha, beta, etc.). If `undefined`, this is
  *      a regular release.
- * @param {string} options.packageTag Tag that should be added to the package submitted to the npm registry.
- * @returns {void}
+ * @param options.packageTag Tag that should be added to the package submitted to the npm registry.
  */
 function generateRelease({ prereleaseId, packageTag }) {
 	echo(`Current Git branch: ${getCurrentGitBranch()}`);
@@ -395,18 +371,14 @@ function generateRelease({ prereleaseId, packageTag }) {
 		updateVersions(oldVersion, releaseInfo.version);
 	}
 
-	echo("Updating rule type header comments");
-	updateRuleTypeHeaders();
-
-	echo("Updating commit with docs data and rule types");
-	exec("git add lib/types/rules.d.ts docs/ && git commit --amend --no-edit");
+	echo("Updating commit with docs data");
+	exec("git add docs/ && git commit --amend --no-edit");
 	exec(`git tag -a -f v${releaseInfo.version} -m ${releaseInfo.version}`);
 }
 
 /**
  * Publishes a generated release to npm and GitHub, and pushes changes to the adjacent `website` repo
  * to remote repo.
- * @returns {void}
  */
 function publishRelease() {
 	ReleaseOps.publishRelease();
@@ -452,8 +424,8 @@ function publishRelease() {
 
 /**
  * Splits a command result to separate lines.
- * @param {string} result The command result string.
- * @returns {Array} The separated lines.
+ * @param result The command result string.
+ * @returns The separated lines.
  */
 function splitCommandResultToLines(result) {
 	return result.trim().split("\n");
@@ -461,8 +433,8 @@ function splitCommandResultToLines(result) {
 
 /**
  * Gets the first commit sha of the given file.
- * @param {string} filePath The file path which should be checked.
- * @returns {string} The commit sha.
+ * @param filePath The file path which should be checked.
+ * @returns The commit sha.
  */
 function getFirstCommitOfFile(filePath) {
 	let commits = execSilent(`git rev-list HEAD -- ${filePath}`);
@@ -473,8 +445,8 @@ function getFirstCommitOfFile(filePath) {
 
 /**
  * Gets the tag name where a given file was introduced first.
- * @param {string} filePath The file path to check.
- * @returns {string} The tag name.
+ * @param filePath The file path to check.
+ * @returns The tag name.
  */
 function getFirstVersionOfFile(filePath) {
 	const firstCommit = getFirstCommitOfFile(filePath);
@@ -495,8 +467,8 @@ function getFirstVersionOfFile(filePath) {
 
 /**
  * Gets the commit that deleted a file.
- * @param {string} filePath The path to the deleted file.
- * @returns {string} The commit sha.
+ * @param filePath The path to the deleted file.
+ * @returns The commit sha.
  */
 function getCommitDeletingFile(filePath) {
 	const commits = execSilent(`git rev-list HEAD -- ${filePath}`);
@@ -506,8 +478,8 @@ function getCommitDeletingFile(filePath) {
 
 /**
  * Gets the first version number where a given file is no longer present.
- * @param {string} filePath The path to the deleted file.
- * @returns {string} The version number.
+ * @param filePath The path to the deleted file.
+ * @returns The version number.
  */
 function getFirstVersionOfDeletion(filePath) {
 	const deletionCommit = getCommitDeletingFile(filePath),
@@ -521,8 +493,8 @@ function getFirstVersionOfDeletion(filePath) {
 
 /**
  * Gets a path to an executable in node_modules/.bin
- * @param {string} command The executable name
- * @returns {string} The executable path
+ * @param command The executable name
+ * @returns The executable path
  */
 function getBinFile(command) {
 	return path.join("node_modules", ".bin", command);
@@ -774,8 +746,8 @@ target.checkRuleFiles = function () {
 
 		/**
 		 * Check if id is present in title
-		 * @param {string} id id to check for
-		 * @returns {boolean} true if present
+		 * @param id id to check for
+		 * @returns true if present
 		 * @private
 		 * @todo Will remove this check when the main heading is automatically generated from rule metadata.
 		 */
@@ -787,7 +759,7 @@ target.checkRuleFiles = function () {
 		 * Check if all H2 headers are known and in the expected order,
 		 * and if mandatory H2 headers are present.
 		 * Only H2 headers are checked as H1 and H3 are variable and/or rule specific.
-		 * @returns {boolean} true if headers are valid
+		 * @returns true if headers are valid
 		 */
 		function validateHeaders() {
 			const headers = docMarkdown
@@ -831,24 +803,13 @@ target.checkRuleFiles = function () {
 
 		/**
 		 * Check if deprecated information is in rule code.
-		 * @returns {boolean} true if present
+		 * @returns true if present
 		 * @private
 		 */
 		function hasDeprecatedInfo() {
 			const deprecatedTagRegExp = /@deprecated in ESLint/u;
 
 			return deprecatedTagRegExp.test(ruleCode);
-		}
-
-		/**
-		 * Check if the rule code has the jsdoc comment with the rule type annotation.
-		 * @returns {boolean} true if present
-		 * @private
-		 */
-		function hasRuleTypeJSDocComment() {
-			const comment = "/** @type {import('../types').Rule.RuleModule} */";
-
-			return ruleCode.includes(comment);
 		}
 
 		// check for docs
@@ -910,13 +871,6 @@ target.checkRuleFiles = function () {
 					errors++;
 				}
 			}
-
-			if (!hasRuleTypeJSDocComment()) {
-				console.error(
-					`Missing rule type JSDoc comment from ${basename} rule code.`,
-				);
-				errors++;
-			}
 		}
 
 		// check for tests
@@ -947,8 +901,8 @@ target.checkRuleExamples = function () {
 target.checkLicenses = function () {
 	/**
 	 * Check if a dependency is eligible to be used by us
-	 * @param {Object} dependency dependency to check
-	 * @returns {boolean} true if we have permission
+	 * @param dependency dependency to check
+	 * @returns true if we have permission
 	 * @private
 	 */
 	function isPermissible(dependency) {
@@ -999,7 +953,6 @@ target.checkLicenses = function () {
  * If hyperfine is not installed or has an unsupported version,
  * an error message with a link to installation instructions is printed,
  * and the process exits with code 1.
- * @returns {void}
  * @throws If an unexpected error occurs while checking the installation.
  */
 function checkHyperfineInstallation() {
@@ -1038,7 +991,6 @@ function checkHyperfineInstallation() {
 /**
  * Downloads a repository which has many js files to test performance with multi files.
  * Here, it's eslint@1.10.3 (450 files).
- * @returns {void}
  */
 function downloadMultifilesTestTarget() {
 	if (!fs.existsSync(PERF_MULTIFILES_TARGET_DIR)) {
@@ -1055,7 +1007,6 @@ function downloadMultifilesTestTarget() {
 /**
  * Creates a config file to use performance tests.
  * This config is turning all core rules on.
- * @returns {void}
  */
 function createConfigForPerformanceTest() {
 	const rules = {};
@@ -1069,8 +1020,8 @@ function createConfigForPerformanceTest() {
 
 /**
  * Creates a command to run ESLint with a given argument.
- * @param {string} arg A file or glob pattern to pass to ESLint. This should not include any unescaped double quotes (`"`).
- * @returns {string} The command to run ESLint with the given argument.
+ * @param arg A file or glob pattern to pass to ESLint. This should not include any unescaped double quotes (`"`).
+ * @returns The command to run ESLint with the given argument.
  */
 function createESLintCommand(arg) {
 	const eslintBin = require("./package.json").bin.eslint;
@@ -1081,9 +1032,8 @@ function createESLintCommand(arg) {
 /**
  * Runs hyperfine to measure the performance of a command.
  * If the command fails, the current process exits with code 1.
- * @param {string} title The title of the command in the hyperfine output.
- * @param {string} command The command to run.
- * @returns {void}
+ * @param title The title of the command in the hyperfine output.
+ * @param command The command to run.
  */
 function runPerformanceTest(title, command) {
 	// We don't need the stack trace of execFileSync if the command fails.

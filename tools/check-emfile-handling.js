@@ -57,7 +57,6 @@ if (os.platform() !== "win32") {
 
 /**
  * Generates files in a directory.
- * @returns {void}
  */
 function generateFiles() {
 	fs.rmSync(OUTPUT_DIRECTORY, {
@@ -77,7 +76,6 @@ function generateFiles() {
 
 /**
  * Generates an EMFILE error by reading all files in the output directory.
- * @returns {undefined}
  */
 async function generateEmFileError() {
 	const results = await Promise.allSettled(

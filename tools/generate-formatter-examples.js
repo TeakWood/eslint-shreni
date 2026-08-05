@@ -64,7 +64,7 @@ const exampleConfig = defineConfig([
 
 /**
  * Gets linting results from every formatter, based on a hard-coded snippet and config
- * @returns {Promise<Object>} Output from each formatter
+ * @returns Output from each formatter
  */
 async function getFormatterResults() {
 	const eslint = new ESLint({

@@ -34,11 +34,7 @@
       "entry": ["src/assets/scss/{styles,print}.scss"],
       "ignore": ["src/assets/js/search.js", "_examples/**"],
     },
-    "packages/eslint-config-eslint": {
-      "entry": ["tests/types/**/*.mts"],
-    },
     "packages/js": {
-      "entry": ["tests/types/**/*.mts"],
       "ignoreDependencies": ["eslint"],
     },
   },

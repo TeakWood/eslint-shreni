@@ -7,9 +7,6 @@ const unicorn = require("eslint-plugin-unicorn").default;
 const regexp = require("eslint-plugin-regexp").default;
 
 // extends eslint recommended config
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const jsConfigs = [
 	js.configs.recommended,
 	{
@@ -142,9 +139,6 @@ const jsConfigs = [
 ];
 
 // extends eslint-plugin-jsdoc's recommended config
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const jsdocConfigs = [
 	jsdoc.configs["flat/recommended"],
 	{
@@ -203,13 +197,14 @@ const jsdocConfigs = [
 				{ checkConstructors: false },
 			],
 			"jsdoc/require-hyphen-before-param-description": ["error", "never"],
-			"jsdoc/require-returns": [
-				"error",
-				{
-					forceRequireReturn: true,
-					forceReturnsWithAsync: true,
-				},
-			],
+
+			/*
+			 * Types were removed from this codebase (pure-JS baseline for TS
+			 * conversion). The JSDoc rules below are entangled with types /
+			 * destructured-object shapes that named types used to describe, so
+			 * they are disabled for the type-free baseline.
+			 */
+			"jsdoc/require-returns": "off",
 			"jsdoc/require-throws": "error",
 			"jsdoc/require-throws-type": "off",
 			"jsdoc/tag-lines": [
@@ -227,10 +222,10 @@ const jsdocConfigs = [
 			"jsdoc/require-yields": "off",
 			"jsdoc/check-access": "error",
 			"jsdoc/check-alignment": "error",
-			"jsdoc/check-param-names": "error",
+			"jsdoc/check-param-names": "off",
 			"jsdoc/check-property-names": "error",
 			"jsdoc/check-tag-names": "error",
-			"jsdoc/check-types": "error",
+			"jsdoc/check-types": "off",
 			"jsdoc/empty-tags": "error",
 			"jsdoc/implements-on-classes": "error",
 			"jsdoc/multiline-blocks": "error",
@@ -240,28 +235,25 @@ const jsdocConfigs = [
 				{ require: { ClassDeclaration: true } },
 			],
 			"jsdoc/require-next-type": "off",
-			"jsdoc/require-param": "error",
-			"jsdoc/require-param-description": "error",
+			"jsdoc/require-param": "off",
+			"jsdoc/require-param-description": "off",
 			"jsdoc/require-param-name": "error",
-			"jsdoc/require-param-type": "error",
+			"jsdoc/require-param-type": "off",
 			"jsdoc/require-property": "error",
 			"jsdoc/require-property-description": "error",
 			"jsdoc/require-property-name": "error",
-			"jsdoc/require-property-type": "error",
-			"jsdoc/require-returns-check": "error",
+			"jsdoc/require-property-type": "off",
+			"jsdoc/require-returns-check": "off",
 			"jsdoc/require-returns-description": "error",
-			"jsdoc/require-returns-type": "error",
+			"jsdoc/require-returns-type": "off",
 			"jsdoc/require-yields-check": "error",
 			"jsdoc/require-yields-type": "off",
-			"jsdoc/valid-types": "error",
+			"jsdoc/valid-types": "off",
 		},
 	},
 ];
 
 // extends eslint-plugin-unicorn's config
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const unicornConfigs = [
 	{
 		name: "eslint-config-eslint/unicorn",
@@ -283,9 +275,6 @@ const unicornConfigs = [
 ];
 
 // extends @eslint-community/eslint-plugin-eslint-comments's recommended config
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const eslintCommentsConfigs = [
 	eslintCommentsPluginConfigs.recommended,
 	{
@@ -298,14 +287,8 @@ const eslintCommentsConfigs = [
 ];
 
 // extends eslint-plugin-regexp's recommended config
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const regexpConfigs = [regexp.configs.recommended];
 
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 module.exports = [
 	{
 		name: "eslint-config-eslint/base",

@@ -18,8 +18,8 @@ import { getPlugins, pluginDataFilePath } from "./data.mjs";
 //-----------------------------------------------------------------------------
 
 /**
- * @param {string} pluginKey
- * @param {PluginSettings} pluginSettings
+ * @param pluginKey
+ * @param pluginSettings
  */
 async function getLatestRepositoryCommit(pluginKey, pluginSettings) {
 	const response = await fetch(

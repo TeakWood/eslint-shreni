@@ -7,18 +7,12 @@ const {
 	},
 } = require("eslint-plugin-n");
 
-/**
- * @type {import("eslint").Linter.RulesRecord}
- */
 const sharedRules = {
 	"n/callback-return": ["error", ["cb", "callback", "next"]],
 	"n/handle-callback-err": ["error", "err"],
 	"n/prefer-node-protocol": "error",
 };
 
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const cjsConfigs = [
 	recommendedScriptConfig,
 	{
@@ -32,9 +26,6 @@ const cjsConfigs = [
 	},
 ];
 
-/**
- * @type {import("eslint").Linter.Config[]}
- */
 const esmConfigs = [
 	recommendedModuleConfig,
 	{

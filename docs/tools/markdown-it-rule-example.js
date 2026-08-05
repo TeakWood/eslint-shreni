@@ -2,28 +2,6 @@
 
 const { docsExampleCodeToParsableCode } = require("./code-block-utils");
 
-/** @typedef {import("../../lib/types").Linter.LanguageOptions} JSLanguageOptions */
-
-/**
- * A callback function to handle the opening of container blocks.
- * @callback OpenHandler
- * @param {Object} data Callback data.
- * @param {"correct" | "incorrect"} data.type The type of the example.
- * @param {string} data.code The example code.
- * @param {JSLanguageOptions | undefined} data.languageOptions The language options to be passed to the Playground.
- * @param {Object} data.codeBlockToken The `markdown-it` token for the code block inside the container.
- * @param {Object} data.env Additional Eleventy metadata, if available.
- * @returns {string | undefined} If a text is returned, it will be appended to the rendered output
- * of `markdown-it`.
- */
-
-/**
- * A callback function to handle the closing of container blocks.
- * @callback CloseHandler
- * @returns {string | undefined} If a text is returned, it will be appended to the rendered output
- * of `markdown-it`.
- */
-
 /**
  * This is a utility to simplify the creation of `markdown-it-container` options to handle rule
  * examples in the documentation.
@@ -37,10 +15,10 @@ const { docsExampleCodeToParsableCode } = require("./code-block-utils");
  *
  * Additionally, the opening and closing of the container blocks are handled by two distinct
  * callbacks, of which only the `open` callback is required.
- * @param {Object} options The options object.
- * @param {OpenHandler} options.open The open callback.
- * @param {CloseHandler} [options.close] The close callback.
- * @returns {Object} The `markdown-it-container` options.
+ * @param options The options object.
+ * @param options.open The open callback.
+ * @param [options.close] The close callback.
+ * @returns The `markdown-it-container` options.
  * @example
  * const markdownIt = require("markdown-it");
  * const markdownItContainer = require("markdown-it-container");

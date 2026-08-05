@@ -17,10 +17,6 @@ import { getPlugins } from "./data.mjs";
 
 const log = debug("test:ecosystem");
 
-/**
- * @typedef {import("./data").PluginSettings} PluginSettings
- */
-
 //-----------------------------------------------------------------------------
 // Helpers
 //-----------------------------------------------------------------------------
@@ -35,8 +31,8 @@ const log = debug("test:ecosystem");
  * 6. Run tests
  * This intentionally does not try/catch: any errors will be thrown.
  *
- * @param {string} pluginKey
- * @param {PluginSettings} pluginSettings
+ * @param pluginKey
+ * @param pluginSettings
  */
 async function runTests(pluginKey, pluginSettings) {
 	const directory = path.join(
@@ -51,8 +47,8 @@ async function runTests(pluginKey, pluginSettings) {
 	/**
 	 * Attempts to run a command in the plugin sandbox directory.
 	 * If it fails, any error stdout will be logged in red before a (re-)thrown error.
-	 * @param {string} command
-	 * @param {string[]} args
+	 * @param command
+	 * @param args
 	 */
 	const runCommand = ([command, ...args]) => {
 		console.log(

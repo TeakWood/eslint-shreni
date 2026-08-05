@@ -22,8 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  */
 
-/** @typedef {import("markdown-it")} MarkdownIt */
-
 const Prism = require("prismjs");
 const loadLanguages = require("prismjs/components/");
 const prismESLintHook = require("../../tools/prism-eslint-hook");
@@ -32,10 +30,10 @@ prismESLintHook.installPrismESLintMarkerHook();
 
 /**
  *
- * @param {MarkdownIt} md markdown-it
- * @param {string} str code
- * @param {string} lang code language
- * @returns {string} highlighted result wrapped in pre
+ * @param md markdown-it
+ * @param str code
+ * @param lang code language
+ * @returns highlighted result wrapped in pre
  */
 const highlighter = function (md, str, lang) {
 	let result = "";
@@ -58,7 +56,7 @@ const highlighter = function (md, str, lang) {
 /**
  *
  * modified from https://github.com/vuejs/vitepress/blob/main/src/node/markdown/plugins/lineNumbers.ts
- * @param {MarkdownIt} md
+ * @param md
  * @license MIT License. See file header.
  */
 const lineNumberPlugin = md => {

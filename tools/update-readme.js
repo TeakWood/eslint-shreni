@@ -36,7 +36,7 @@ const readme = fs.readFileSync(README_FILE_PATH, "utf8");
 
 /**
  * Fetches the latest sponsors from the website.
- * @returns {Promise<string>} Prerendered sponsors markdown.
+ * @returns Prerendered sponsors markdown.
  */
 async function fetchSponsorsMarkdown() {
 	return got(SPONSORS_URL).text();
@@ -44,7 +44,7 @@ async function fetchSponsorsMarkdown() {
 
 /**
  * Fetches the latest team data from the website.
- * @returns {Object} The sponsors data object.
+ * @returns The sponsors data object.
  */
 async function fetchTeamData() {
 	return got(TEAM_URL).json();
@@ -52,8 +52,8 @@ async function fetchTeamData() {
 
 /**
  * Formats an array of team members for inclusion in the readme.
- * @param {Array} members The array of members to format.
- * @returns {string} The HTML for the members list.
+ * @param members The array of members to format.
+ * @returns The HTML for the members list.
  */
 function formatTeamMembers(members) {
 	return stripIndents`

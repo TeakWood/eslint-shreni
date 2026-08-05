@@ -1,8 +1,5 @@
 "use strict";
 
-/**
- * @type {import("eslint").Linter.RulesRecord}
- */
 const rules = {
 	"array-bracket-spacing": "error",
 	"arrow-parens": ["error", "as-needed"],

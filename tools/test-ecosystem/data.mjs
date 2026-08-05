@@ -13,22 +13,6 @@ import util, { styleText } from "node:util";
 // Types
 //-----------------------------------------------------------------------------
 
-/**
- * Command-line scripts to run on a plugin.
- * @typedef {Object} PluginData
- * @property {string?} build Command to build files before tests, if defined.
- * @property {string} install Command to install dependencies.
- * @property {string} test Command to run tests.
- */
-
-/**
- * Settings for how to clone, set up, and test an ecosystem plugin.
- * @typedef {Object} PluginData
- * @property {PluginCommands} commands Command-line scripts to run on the plugin.
- * @property {string} commit Hash to check out after cloning the plugin.
- * @property {string} repository Repository URL to clone the plugin from.
- */
-
 //-----------------------------------------------------------------------------
 // Constants
 //-----------------------------------------------------------------------------
@@ -40,8 +24,7 @@ export const pluginDataFilePath = new URL("plugins-data.json", import.meta.url);
 //-----------------------------------------------------------------------------
 
 /**
- * @param {"test" | "update"} action
- * @returns {[string, PluginData][]}
+ * @param action
  */
 export async function getPlugins(action) {
 	const { values } = util.parseArgs({

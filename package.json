@@ -8,43 +8,19 @@
     "eslint": "./bin/eslint.js"
   },
   "main": "./lib/api.js",
-  "types": "./lib/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/types/index.d.ts",
       "default": "./lib/api.js"
     },
     "./config": {
-      "types": "./lib/types/config-api.d.ts",
       "default": "./lib/config-api.js"
     },
     "./package.json": "./package.json",
     "./use-at-your-own-risk": {
-      "types": "./lib/types/use-at-your-own-risk.d.ts",
       "default": "./lib/unsupported-api.js"
     },
-    "./rules": {
-      "types": "./lib/types/rules.d.ts"
-    },
     "./universal": {
-      "types": "./lib/types/universal.d.ts",
       "default": "./lib/universal.js"
-    }
-  },
-  "typesVersions": {
-    "*": {
-      "use-at-your-own-risk": [
-        "./lib/types/use-at-your-own-risk.d.ts"
-      ],
-      "rules": [
-        "./lib/types/rules.d.ts"
-      ],
-      "universal": [
-        "./lib/types/universal.d.ts"
-      ],
-      "config": [
-        "./lib/types/config-api.d.ts"
-      ]
     }
   },
   "scripts": {
@@ -61,8 +37,6 @@
     "lint:unused": "knip",
     "lint:fix": "node Makefile.js lint -- fix",
     "lint:fix:docs:js": "node Makefile.js lintDocsJS -- fix",
-    "lint:rule-types": "node tools/update-rule-type-headers.js --check",
-    "lint:types": "attw --pack",
     "release:generate:alpha": "node Makefile.js generatePrerelease -- alpha",
     "release:generate:beta": "node Makefile.js generatePrerelease -- beta",
     "release:generate:latest": "node Makefile.js generateRelease -- latest",
@@ -77,12 +51,7 @@
     "test:emfile": "node tools/check-emfile-handling.js",
     "test:fuzz": "node Makefile.js fuzz",
     "test:performance": "node Makefile.js perf",
-    "test:pnpm": "cd tests/pnpm && node check.js && pnpm install && pnpm exec tsc",
-    "test:types": "tsc -p tests/lib/types/tsconfig.json && npm run test:types --workspaces --if-present",
-    "test:types:5.3": "npx -p typescript@5.3 -y -- tsc -p tsconfig.types-legacy.json",
-    "test:types:5.x": "npx -p typescript@5.x -y -- tsc -p tsconfig.types.json",
-    "test:types:7.x": "npx -p @typescript/native-preview@latest -y -- tsgo -p tsconfig.types.json",
-    "test:types:all": "npm run test:types && npm run test:types:5.3 && npm run test:types:5.x && npm run test:types:7.x"
+    "test:pnpm": "cd tests/pnpm && node check.js && pnpm install"
   },
   "allowScripts": {
     "core-js": false,
@@ -109,8 +78,7 @@
     "lib/rules/*.js": [
       "node tools/update-eslint-all.js",
       "node tools/update-eslint-recommended.js",
-      "node tools/update-rule-type-headers.js",
-      "git add packages/js/src/configs/*.js lib/types/rules.d.ts"
+      "git add packages/js/src/configs/*.js"
     ],
     "docs/src/rules/*.md": [
       "node tools/check-rule-examples.js",
@@ -136,12 +104,10 @@
     "@eslint-community/regexpp": "^4.12.2",
     "@eslint/config-array": "^0.23.5",
     "@eslint/config-helpers": "^0.7.0",
-    "@eslint/core": "^1.2.1",
     "@eslint/plugin-kit": "^0.7.2",
     "@humanfs/node": "^0.16.6",
     "@humanwhocodes/module-importer": "^1.0.1",
     "@humanwhocodes/retry": "^0.4.2",
-    "@types/estree": "^1.0.6",
     "ajv": "^6.14.0",
     "cross-spawn": "^7.0.6",
     "debug": "^4.3.2",
@@ -164,14 +130,11 @@
     "optionator": "^0.9.3"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "^0.18.3",
     "@babel/core": "^7.4.3",
     "@babel/preset-env": "^7.4.3",
     "@cypress/webpack-preprocessor": "^6.0.2",
     "@eslint/eslintrc": "^3.3.6",
     "@eslint/json": "^2.0.1",
-    "@types/esquery": "^1.5.4",
-    "@types/node": "^22.13.14",
     "@typescript-eslint/parser": "^8.58.2",
     "babel-loader": "^8.0.5",
     "c8": "^11.0.0",
@@ -184,7 +147,6 @@
     "eslint": "file:.",
     "eslint-config-eslint": "file:packages/eslint-config-eslint",
     "eslint-plugin-eslint-plugin": "^7.3.2",
-    "eslint-plugin-expect-type": "^0.6.0",
     "eslint-plugin-yml": "^1.14.0",
     "eslint-release": "^3.3.0",
     "eslint-rule-extender": "^0.0.1",

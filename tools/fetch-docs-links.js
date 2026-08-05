@@ -55,8 +55,8 @@ filenames = filenames.map(filename => path.resolve(BASE_DIR, filename));
 
 /**
  * Fetches metadata information for a given URL.
- * @param {string} url The URL to fetch data for.
- * @returns {Promise<object>} An object with metadata info.
+ * @param url The URL to fetch data for.
+ * @returns An object with metadata info.
  */
 async function fetchLinkMeta(url) {
 	const { body: html, url: returnedURL } = await got(url);

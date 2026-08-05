@@ -1,15 +1,13 @@
 "use strict";
 
-/** @typedef {import("../lib/types").Linter.Parser} Parser */
-
 const evk = require("eslint-visitor-keys");
 const espree = require("espree");
 const assert = require("node:assert");
 
 /**
  * Determines whether an AST node could be an expression, based on the type
- * @param {ASTNode} node The node
- * @returns {boolean} `true` if the node could be an expression
+ * @param node The node
+ * @returns `true` if the node could be an expression
  */
 function isMaybeExpression(node) {
 	return (
@@ -22,8 +20,8 @@ function isMaybeExpression(node) {
 
 /**
  * Determines whether an AST node is a statement
- * @param {ASTNode} node The node
- * @returns {boolean} `true` if the node is a statement
+ * @param node The node
+ * @returns `true` if the node is a statement
  */
 function isStatement(node) {
 	return node.type.endsWith("Statement") || node.type.endsWith("Declaration");
@@ -33,13 +31,13 @@ function isStatement(node) {
  * Given "bad" source text (e.g. an code sample that causes a rule to crash), tries to return a smaller
  * piece of source text which is also "bad", to make it easier for a human to figure out where the
  * problem is.
- * @param {Object} options Options to process
- * @param {string} options.sourceText Initial piece of "bad" source text
- * @param {function(string): boolean} options.predicate A predicate that returns `true` for bad source text and `false` for good source text
- * @param {Parser} [options.parser] The parser used to parse the source text. Defaults to a modified
+ * @param options Options to process
+ * @param options.sourceText Initial piece of "bad" source text
+ * @param options.predicate A predicate that returns `true` for bad source text and `false` for good source text
+ * @param [options.parser] The parser used to parse the source text. Defaults to a modified
  * version of espree that uses recent parser options.
- * @param {Object} [options.visitorKeys] The visitor keys of the AST. Defaults to eslint-visitor-keys.
- * @returns {string} Another piece of "bad" source text, which may or may not be smaller than the original source text.
+ * @param [options.visitorKeys] The visitor keys of the AST. Defaults to eslint-visitor-keys.
+ * @returns Another piece of "bad" source text, which may or may not be smaller than the original source text.
  */
 function reduceBadExampleSize({
 	sourceText,
@@ -65,7 +63,7 @@ function reduceBadExampleSize({
 
 	/**
 	 * Returns a new unique identifier
-	 * @returns {string} A name for a new identifier
+	 * @returns A name for a new identifier
 	 */
 	function generateNewIdentifierName() {
 		return `$${counter++}`;
@@ -73,8 +71,8 @@ function reduceBadExampleSize({
 
 	/**
 	 * Determines whether a source text sample is "bad"
-	 * @param {string} updatedSourceText The sample
-	 * @returns {boolean} `true` if the sample is "bad"
+	 * @param updatedSourceText The sample
+	 * @returns `true` if the sample is "bad"
 	 */
 	function reproducesBadCase(updatedSourceText) {
 		try {
@@ -103,8 +101,8 @@ function reduceBadExampleSize({
 	 * Applies all committed modifications (plus an optional pending one) to the
 	 * original source text and returns the result. Modifications are applied in
 	 * reverse source order so that each offset remains valid when applied.
-	 * @param {{ start: number, end: number, replacement: string } | null} [pendingMod] An uncommitted modification to include in this preview
-	 * @returns {string} The modified source text
+	 * @param [pendingMod] An uncommitted modification to include in this preview
+	 * @returns The modified source text
 	 */
 	function buildSource(pendingMod) {
 		const allMods = pendingMod
@@ -127,8 +125,7 @@ function reduceBadExampleSize({
 	 * them with simplified variants to produce simplified source which is still "bad".
 	 * Committed modifications are recorded in {@link modifications}; the AST is also
 	 * mutated so that traversal state stays consistent with the committed changes.
-	 * @param {ASTNode} node An AST node to prune.
-	 * @returns {void}
+	 * @param node An AST node to prune.
 	 */
 	function pruneIrrelevantSubtrees(node) {
 		for (const key of visitorKeys[node.type] ?? []) {
@@ -198,9 +195,9 @@ function reduceBadExampleSize({
 	/**
 	 * Recursively tries to extract a descendant node from the AST that is "bad" on its own.
 	 * Uses source-range slicing instead of code generation, so it works for every node type.
-	 * @param {ASTNode} node A node which produces "bad" source code
-	 * @param {string} source The source text whose ranges match `node`
-	 * @returns {ASTNode} A descendant of `node` which is also bad (or `node` itself)
+	 * @param node A node which produces "bad" source code
+	 * @param source The source text whose ranges match `node`
+	 * @returns A descendant of `node` which is also bad (or `node` itself)
 	 */
 	function extractRelevantChild(node, source) {
 		const childNodes = (visitorKeys[node.type] ?? []).flatMap(key =>
@@ -238,8 +235,8 @@ function reduceBadExampleSize({
 
 	/**
 	 * Removes and simplifies comments from the source text
-	 * @param {string} text A piece of "bad" source text
-	 * @returns {string} A piece of "bad" source text with fewer and/or simpler comments.
+	 * @param text A piece of "bad" source text
+	 * @returns A piece of "bad" source text with fewer and/or simpler comments.
 	 */
 	function removeIrrelevantComments(text) {
 		const textAst = parser.parse(text);

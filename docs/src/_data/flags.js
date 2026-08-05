@@ -11,8 +11,8 @@
 
 /**
  * Determines whether the flag is used for test purposes only.
- * @param {string} name The flag name to check.
- * @returns {boolean} `true` if the flag is used for test purposes only.
+ * @param name The flag name to check.
+ * @returns `true` if the flag is used for test purposes only.
  */
 function isTestOnlyFlag(name) {
 	return name.startsWith("test_only");

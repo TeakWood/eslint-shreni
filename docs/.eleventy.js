@@ -163,14 +163,12 @@ module.exports = function (eleventyConfig) {
 		headingTag: "h2", // Heading tag when showing heading above the wrapper element
 	});
 
-	/** @typedef {import("markdown-it/lib/token")} MarkdownItToken A MarkdownIt token. */
-
 	/**
 	 * Generates HTML markup for an inline alert.
-	 * @param {"warning"|"tip"|"important"} type The type of alert to create.
-	 * @param {Array<MarkdownItToken>} tokens Array of MarkdownIt tokens to use.
-	 * @param {number} index The index of the current token in the tokens array.
-	 * @returns {string} The markup for the alert.
+	 * @param type The type of alert to create.
+	 * @param tokens Array of MarkdownIt tokens to use.
+	 * @param index The index of the current token in the tokens array.
+	 * @returns The markup for the alert.
 	 */
 	function generateAlertMarkup(type, tokens, index) {
 		if (tokens[index].nesting === 1) {
@@ -194,9 +192,9 @@ module.exports = function (eleventyConfig) {
 
 	/**
 	 * Encodes text in the base 64 format used in playground URL params.
-	 * @param {string} text Text to be encoded to base 64.
+	 * @param text Text to be encoded to base 64.
 	 * @see https://github.com/eslint/eslint.org/blob/1b2f2aabeac2955a076d61788da8a0008bca6fb6/src/playground/utils/unicode.js
-	 * @returns {string} The base 64 encoded equivalent of the text.
+	 * @returns The base 64 encoded equivalent of the text.
 	 */
 	function encodeToBase64(text) {
 		return btoa(unescape(encodeURIComponent(text)));
@@ -511,7 +509,7 @@ module.exports = function (eleventyConfig) {
 
 		/**
 		 * Resolves source
-		 * @returns {string} URL or a local file path
+		 * @returns URL or a local file path
 		 */
 		function getSRC() {
 			if (source.startsWith("http://") || source.startsWith("https://")) {

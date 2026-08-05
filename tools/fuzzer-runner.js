@@ -30,12 +30,12 @@ const CRASH_AUTOFIX_TEST_COUNT_RATIO = 3;
 
 /**
  * Runs the fuzzer and outputs a progress bar
- * @param {Object} [options] Options for the fuzzer
- * @param {number} [options.amount=300] A positive integer indicating how much testing to do. Larger values result in a higher
+ * @param [options] Options for the fuzzer
+ * @param [options.amount=300] A positive integer indicating how much testing to do. Larger values result in a higher
  * chance of finding bugs, but cause the testing to take longer (linear increase). With the default value, the fuzzer
  * takes about 15 seconds to run.
- * @param {boolean} [options.fuzzBrokenAutofixes=true] true if the fuzzer should look for invalid autofixes in addition to rule crashes
- * @returns {Object[]} A list of objects, where each object represents a problem detected by the fuzzer. The objects have the same
+ * @param [options.fuzzBrokenAutofixes=true] true if the fuzzer should look for invalid autofixes in addition to rule crashes
+ * @returns A list of objects, where each object represents a problem detected by the fuzzer. The objects have the same
  * schema as objects returned from eslint-fuzzer.
  */
 function run({ amount = 300, fuzzBrokenAutofixes = true } = {}) {

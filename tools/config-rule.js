@@ -27,8 +27,8 @@ const MAX_CONFIGS_PER_RULE = 50;
 
 /**
  * Wrap all of the elements of an array into arrays.
- * @param {*[]} xs Any array.
- * @returns {Array[]} An array of arrays.
+ * @param xs Any array.
+ * @returns An array of arrays.
  */
 function explodeArray(xs) {
 	return xs.reduce((accumulator, x) => {
@@ -43,9 +43,9 @@ function explodeArray(xs) {
  *
  * For example:
  * combineArrays([a, [b, c]], [x, y]); // -> [[a, x], [a, y], [b, c, x], [b, c, y]]
- * @param {Array} arr1 The first array to combine.
- * @param {Array} arr2 The second array to combine.
- * @returns {Array} A mixture of the elements of the first and second arrays.
+ * @param arr1 The first array to combine.
+ * @param arr2 The second array to combine.
+ * @returns A mixture of the elements of the first and second arrays.
  */
 function combineArrays(arr1, arr2) {
 	const res = [];
@@ -83,8 +83,8 @@ function combineArrays(arr1, arr2) {
  *     [{before: true}, {before: false}],
  *     [{after: true}, {after: false}]
  * ]
- * @param {Object[]} objects Array of objects, each with one property/value pair
- * @returns {Array[]} Array of arrays of objects grouped by property
+ * @param objects Array of objects, each with one property/value pair
+ * @returns Array of arrays of objects grouped by property
  */
 function groupByProperty(objects) {
 	const groupedObj = objects.reduce((accumulator, obj) => {
@@ -102,30 +102,6 @@ function groupByProperty(objects) {
 //------------------------------------------------------------------------------
 // Private
 //------------------------------------------------------------------------------
-
-/** @typedef {0 | 1 | 2} SeverityLevel */
-
-/**
- * Configuration settings for a rule.
- *
- * A configuration can be a single number (severity), or an array where the first
- * element in the array is the severity, and is the only required element.
- * Configs may also have one or more additional elements to specify rule
- * configuration or options.
- * @typedef {SeverityLevel|[SeverityLevel, ...any[]]} ruleConfig
- */
-
-/**
- * Object whose keys are rule names and values are arrays of valid ruleConfig items
- * which should be linted against the target source code to determine error counts.
- * (a ruleConfigSet.ruleConfigs).
- *
- * e.g. rulesConfig = {
- *     "comma-dangle": [2, [2, "always"], [2, "always-multiline"], [2, "never"]],
- *     "no-console": [2]
- * }
- * @typedef rulesConfig
- */
 
 /**
  * Create valid rule configurations by combining two arrays,
@@ -145,9 +121,9 @@ function groupByProperty(objects) {
  *     {before: false, after: true},
  *     {before: false, after: false}
  * ]
- * @param {Object[]} objArr1 Single key/value objects, all with the same key
- * @param {Object[]} objArr2 Single key/value objects, all with another key
- * @returns {Object[]} Combined objects for each combination of input properties and values
+ * @param objArr1 Single key/value objects, all with the same key
+ * @param objArr2 Single key/value objects, all with another key
+ * @returns Combined objects for each combination of input properties and values
  */
 function combinePropertyObjects(objArr1, objArr2) {
 	const res = [];
@@ -179,10 +155,10 @@ function combinePropertyObjects(objArr1, objArr2) {
 
 /**
  * Generate rule configurations from a schema object
- * @param {Object} obj Schema item with type === "object"
- * @param {Object} [rootSchema] The root schema object for resolving $ref
- * @param {Function} [valueExtractor] Function to extract values from a property schema
- * @returns {Object[]} Array of rule configurations
+ * @param obj Schema item with type === "object"
+ * @param [rootSchema] The root schema object for resolving $ref
+ * @param [valueExtractor] Function to extract values from a property schema
+ * @returns Array of rule configurations
  */
 function generateObjectConfigs(obj, rootSchema, valueExtractor) {
 	const objectConfigSet = {
@@ -237,9 +213,9 @@ function generateObjectConfigs(obj, rootSchema, valueExtractor) {
 
 /**
  * Extract possible values from a schema object
- * @param {Object} schema A rule's schema object
- * @param {Object} [rootSchema] The root schema object for resolving $ref
- * @returns {any[]} Possible values for the option
+ * @param schema A rule's schema object
+ * @param [rootSchema] The root schema object for resolving $ref
+ * @returns Possible values for the option
  */
 function getPossibleValuesFromSchema(schema, rootSchema) {
 	if (!schema) {
@@ -356,12 +332,11 @@ function getPossibleValuesFromSchema(schema, rootSchema) {
  */
 class RuleConfigSet {
 	/**
-	 * @param {ruleConfig[]} configs Valid rule configurations
+	 * @param configs Valid rule configurations
 	 */
 	constructor(configs) {
 		/**
 		 * Stored valid rule configurations for this instance
-		 * @type {Array}
 		 */
 		this.ruleConfigs = configs || [];
 	}
@@ -369,7 +344,6 @@ class RuleConfigSet {
 	/**
 	 * Add a severity level to the front of all configs in the instance.
 	 * This should only be called after all configs have been added to the instance.
-	 * @returns {void}
 	 */
 	addErrorSeverity() {
 		const severity = 2;
@@ -385,8 +359,7 @@ class RuleConfigSet {
 
 	/**
 	 * Add rule configs from an array of possible values for the next option
-	 * @param {any[]} options Array of valid rule options
-	 * @returns {void}
+	 * @param options Array of valid rule options
 	 */
 	addOptions(options) {
 		this.ruleConfigs = this.ruleConfigs.concat(
@@ -397,8 +370,8 @@ class RuleConfigSet {
 
 /**
  * Generate valid rule configurations based on a schema object
- * @param {Object} schema A rule's schema object
- * @returns {Array[]} Valid rule configurations
+ * @param schema A rule's schema object
+ * @returns Valid rule configurations
  */
 function generateConfigsFromSchema(schema) {
 	/*
@@ -462,8 +435,8 @@ function generateConfigsFromSchema(schema) {
 
 /**
  * Generate possible rule configurations for all of the core rules
- * @param {boolean} noDeprecated Indicates whether ignores deprecated rules or not.
- * @returns {rulesConfig} Hash of rule names and arrays of possible configurations
+ * @param noDeprecated Indicates whether ignores deprecated rules or not.
+ * @returns Hash of rule names and arrays of possible configurations
  */
 function createCoreRuleConfigs(noDeprecated = false) {
 	return Array.from(builtInRules).reduce((accumulator, [id, rule]) => {

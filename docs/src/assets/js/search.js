@@ -35,8 +35,8 @@ let caretPosition = 0;
 
 /**
  * Executes a search against the Algolia index.
- * @param {string} query The search query to execute.
- * @returns {Promise<Array<object>>} The search results.
+ * @param query The search query to execute.
+ * @returns The search results.
  */
 function fetchSearchResults(query) {
 	return index
@@ -49,8 +49,8 @@ function fetchSearchResults(query) {
 /**
  * Clears the search results from the display.
  * If the removeEventListener flag is true, removes the click event listener from the document.
- * @param {boolean} [removeEventListener=false] - Optional flag to indicate if the click event listener should be removed. Default is false.
- * @returns {void} - This function doesn't return anything.
+ * @param [removeEventListener=false] - Optional flag to indicate if the click event listener should be removed. Default is false.
+ * @returns - This function doesn't return anything.
  */
 function clearSearchResults(removeEventListener = false) {
 	resultsElement.innerHTML = "";
@@ -63,7 +63,7 @@ function clearSearchResults(removeEventListener = false) {
 /**
  * Displays a "No results found" message in both the live region and results display area.
  * This is typically used when no matching results are found in the search.
- * @returns {void} - This function doesn't return anything.
+ * @returns - This function doesn't return anything.
  */
 function showNoResults() {
 	resultsLiveRegion.innerHTML = "No results found.";
@@ -73,7 +73,7 @@ function showNoResults() {
 
 /**
  * Clears any "No results found" message from the live region and results display area.
- * @returns {void} - This function doesn't return anything.
+ * @returns - This function doesn't return anything.
  */
 function clearNoResults() {
 	resultsLiveRegion.innerHTML = "";
@@ -82,8 +82,7 @@ function clearNoResults() {
 
 /**
  * Displays the given search results in the page.
- * @param {Array<object>} results The search results to display.
- * @returns {void}
+ * @param results The search results to display.
  */
 function displaySearchResults(results) {
 	clearSearchResults();
@@ -137,9 +136,9 @@ function maintainScrollVisibility(activeElement, scrollParent) {
 
 /**
  * Debounces the provided callback with a given delay.
- * @param {Function} callback The callback that needs to be debounced.
- * @param {Number} delay Time in ms that the timer should wait before the callback is executed.
- * @returns {Function} Returns the new debounced function.
+ * @param callback The callback that needs to be debounced.
+ * @param delay Time in ms that the timer should wait before the callback is executed.
+ * @returns Returns the new debounced function.
  */
 function debounce(callback, delay) {
 	let timer;
@@ -153,8 +152,8 @@ function debounce(callback, delay) {
  * Debounced function to fetch search results after 300ms of inactivity.
  * Calls `fetchSearchResults` to retrieve data and `displaySearchResults` to show them.
  * If an error occurs, clears the search results.
- * @param {string} query - The search query.
- * @returns {void} - No return value.
+ * @param query - The search query.
+ * @returns - No return value.
  * @see debounce - Limits the number of requests during rapid typing.
  */
 const debouncedFetchSearchResults = debounce(query => {
@@ -167,8 +166,8 @@ const debouncedFetchSearchResults = debounce(query => {
 
 /**
  * Handles the document click event to clear search results if the user clicks outside of the search input or results element.
- * @param {MouseEvent} e - The event object representing the click event.
- * @returns {void} - This function does not return any value. It directly interacts with the UI by clearing search results.
+ * @param e - The event object representing the click event.
+ * @returns - This function does not return any value. It directly interacts with the UI by clearing search results.
  */
 const handleDocumentClick = e => {
 	if (e.target !== resultsElement && e.target !== searchInput) {

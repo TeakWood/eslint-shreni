@@ -87,7 +87,7 @@ Example output (formatted for easier reading):
 {
     "results": [
         {
-            "filePath": "/var/lib/jenkins/workspace/eslint Release/eslint/fullOfProblems.js",
+            "filePath": "/Users/navakanth/projects/eslint-shreni/fullOfProblems.js",
             "messages": [
                 {
                     "ruleId": "no-unused-vars",
@@ -345,7 +345,7 @@ Example output (formatted for easier reading):
         }
     ],
     "metadata": {
-        "cwd": "/var/lib/jenkins/workspace/eslint Release/eslint",
+        "cwd": "/Users/navakanth/projects/eslint-shreni",
         "rulesMeta": {
             "no-unused-vars": {
                 "type": "problem",
@@ -993,7 +993,7 @@ Example output (formatted for easier reading):
 ```json
 [
     {
-        "filePath": "/var/lib/jenkins/workspace/eslint Release/eslint/fullOfProblems.js",
+        "filePath": "/Users/navakanth/projects/eslint-shreni/fullOfProblems.js",
         "messages": [
             {
                 "ruleId": "no-unused-vars",
@@ -1260,7 +1260,7 @@ Example output:
 
 ```text
 
-/var/lib/jenkins/workspace/eslint Release/eslint/fullOfProblems.js
+/Users/navakanth/projects/eslint-shreni/fullOfProblems.js
   1:10  error    'addOne' is defined but never used                              no-unused-vars
   2:9   error    Use the isNaN function to compare with NaN                      use-isnan
   3:16  error    Unexpected space before unary operator '++'                     space-unary-ops

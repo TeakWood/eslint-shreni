@@ -28,8 +28,8 @@ const skipPatterns = [
 /**
  * Filter function to mark tests as skipped.
  * Tests for which this function returns `true' are not considered failed.
- * @param {Object} report hyperlink's test report for a link.
- * @returns {boolean} `true` if the report contains any of `skipPatterns`.
+ * @param report hyperlink's test report for a link.
+ * @returns `true` if the report contains any of `skipPatterns`.
  */
 function skipFilter(report) {
 	return Object.values(report).some(value =>
