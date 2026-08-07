@@ -1,0 +1,25 @@
+{
+  /*
+   * Declaration emit. Generates `.d.ts` files from the JSDoc annotations in
+   * the allowlisted JavaScript sources, so the published types are derived
+   * from the implementation rather than maintained alongside it.
+   *
+   * Run with `npm run build:types`. The output directory is build output and
+   * is not checked in.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+
+    /*
+     * Pinned rather than inferred: without it the output layout follows
+     * the common ancestor of whatever happens to be in the allowlist, so
+     * adding the first file outside `lib/` would silently move every
+     * emitted declaration.
+     */
+    "rootDir": ".",
+    "outDir": "dist/types"
+  }
+}

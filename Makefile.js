@@ -32,6 +32,7 @@ require("shelljs/make");
 const {
 	cat,
 	cd,
+	cp,
 	echo,
 	exec,
 	exit,
@@ -68,6 +69,7 @@ const NODE = "node ", // intentional extra space
 	TEMP_DIR = "./tmp/",
 	DEBUG_DIR = "./debug/",
 	BUILD_DIR = "build",
+	TYPES_DIR = "./dist/types",
 	SITE_DIR = "../eslint.org",
 	DOCS_DIR = "./docs",
 	DOCS_SRC_DIR = path.join(DOCS_DIR, "src"),
@@ -532,9 +534,41 @@ target.lint = function ([fix = false] = []) {
 		errors++;
 	}
 
+	echo("Validating types");
+	lastReturn = exec(`${getBinFile("tsc")} -p tsconfig.json`);
+	if (lastReturn.code !== 0) {
+		errors++;
+	}
+
 	if (errors) {
 		exit(1);
 	}
+};
+
+/**
+ * Generates `.d.ts` declarations from the JSDoc annotations in the sources
+ * listed in `tsconfig.json`, then copies the hand-authored type vocabulary in
+ * alongside them so the emitted declarations resolve.
+ * @returns {void}
+ */
+target.buildTypes = function () {
+	echo("Generating type declarations");
+
+	const lastReturn = exec(`${getBinFile("tsc")} -p tsconfig.types.json`);
+
+	if (lastReturn.code !== 0) {
+		exit(1);
+	}
+
+	/*
+	 * `tsc` does not copy `.d.ts` inputs to the output directory, but the
+	 * emitted declarations import from them by relative path, so they have to
+	 * be placed where those imports resolve.
+	 */
+	const vocabularyOutDir = path.join(TYPES_DIR, "lib", "types");
+
+	mkdir("-p", vocabularyOutDir);
+	cp("lib/types/*.d.ts", vocabularyOutDir);
 };
 
 target.lintDocsJS = function ([fix = false] = []) {
