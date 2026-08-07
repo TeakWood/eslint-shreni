@@ -301,3 +301,75 @@ The audit is guarded by `tests/lib/types/dependency-type-availability.js`, which
 re-derives the resolution facts from the installed tree on every test run and
 fails if a dependency's type availability changes or a new runtime dependency is
 added without being classified here.
+
+## The type-check gate
+
+`npm run lint:types` (`tsc -p tsconfig.json`) type-checks the allowlist under
+`strict: true`. It runs in three places: as its own blocking **Type Check** CI
+job, inside `node Makefile lint` so the local `npm run lint` catches it too, and
+as `stack.buildCommand` in `.shreni/kshetra.yaml`.
+
+`tsconfig.base.json` holds the compiler options, `tsconfig.json` adds the
+allowlist and `noEmit`, and `tsconfig.types.json` extends that for declaration
+emit (`npm run build:types`). Splitting them means the checked file set and the
+emitted file set cannot drift apart.
+
+### The include-vs-traversal trap, and what resolves it
+
+A `files`/`include` list selects only the **root** files of the program.
+Everything those roots require is pulled in as well, and under `checkJs: true`
+it is type-checked with them. On a codebase converting incrementally that makes
+a growing allowlist unworkable: adding one annotated module drags its entire
+un-annotated dependency subtree into the build and fails on code nobody has
+touched. A "growing allowlist" is not, on its own, a strategy.
+
+The companion mechanism is **`checkJs: false` plus a per-file `// @ts-check`
+pragma**:
+
+- The allowlist decides what is _in the program_.
+- The pragma decides what is _checked_.
+
+A required file with no pragma is still parsed and still used for inference —
+so callers get real types from it — but nothing in it is ever reported. That
+makes conversion order independent of the dependency graph, which is what lets
+the work proceed bottom-up one file at a time.
+
+The alternative considered was `// @ts-nocheck` headers on every un-annotated
+file, removed as each is claimed. It was rejected: it requires touching ~370
+files that no one is converting, it inverts the default so a _new_ un-annotated
+file silently breaks the build, and `@ts-nocheck` suppresses errors in a file
+that a later reader cannot distinguish from a file that genuinely passes.
+`checkJs: false` gets the same result with no source churn.
+
+### Demonstrated, not asserted
+
+`tests/lib/types/include-traversal.js` proves the mechanism against the real
+compiler rather than restating it. It builds programs from the shipped
+`tsconfig.json` and checks:
+
+1. **The trap is real.** Files outside the allowlist do reach the program.
+   Adding `tests/fixtures/types/allowlist-growth/annotated-consumer.js` — an
+   annotated stand-in for the next file to be converted — pulls in
+   `lib/rules/utils/ast-utils.js`, which is neither annotated nor allowlisted.
+   The test also asserts `ast-utils.js` still lacks a pragma, so the
+   demonstration cannot quietly become vacuous once that file is converted.
+2. **The mechanism holds.** That same program reports **0 errors**.
+3. **It is load-bearing, not luck.** The identical file set compiled with
+   `checkJs: true` reports **158 errors, every one of them from
+   `ast-utils.js`** — an un-annotated file. This is the counterfactual that
+   makes result (2) mean something.
+4. **Checking is genuinely on.** `annotated-with-error.js` carries a pragma and
+   a deliberate type error, and is reported. Without this, result (2) would
+   also be satisfied by a compiler checking nothing at all.
+
+Point 3 is why the suite is worth its runtime: flipping `checkJs` to `true` in
+`tsconfig.base.json` fails these tests immediately, so the decision cannot be
+reverted by accident.
+
+### Declared inputs
+
+`@types/node`, `@types/estree`, and `@types/debug` are now explicit
+`devDependencies`, closing the gap recorded above. `@types/estree` is in
+`knip.jsonc`'s `ignoreDependencies` because nothing `require()`s it — it is
+consumed by the compiler, through `eslint-scope`'s own declarations, which Knip
+cannot see.

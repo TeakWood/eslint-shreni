@@ -9,6 +9,34 @@ permissions:
     contents: read
 
 jobs:
+    # The type-check gate, as its own job rather than a step inside Verify
+    # Files. A type error then fails on its own line instead of behind whichever
+    # of that job's many checks happens to run first, and it reports without
+    # waiting on the docs install and the rest of the lint suite.
+    type_check:
+        name: Type Check
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: "lts/*"
+
+            - name: Install Packages
+              run: npm install
+
+            # Type-checks every source in the `tsconfig.json` allowlist under
+            # `strict: true`. Non-zero exit fails the job, which blocks the PR.
+            - name: Check Types
+              run: npm run lint:types
+
+            # Type-checking alone does not prove the declarations can be
+            # generated: declaration emit has failure modes `--noEmit` cannot
+            # see, such as a specifier that resolves in the source but not from
+            # the emitted `.d.ts`.
+            - name: Build Type Declarations
+              run: npm run build:types
+
     verify_files:
         name: Verify Files
         runs-on: ubuntu-latest
@@ -33,13 +61,11 @@ jobs:
               working-directory: docs
               run: npm install
 
+            # Also type-checks the allowlist, so a type error fails the local
+            # `npm run lint` gate too. The Type Check job is what reports it
+            # in isolation.
             - name: Lint Files
               run: node Makefile lint
-
-            # `node Makefile lint` already type-checks the allowlist. This
-            # additionally proves the declarations can be generated from it.
-            - name: Build Type Declarations
-              run: npm run build:types
 
             - name: Check Rule Files
               run: node Makefile checkRuleFiles

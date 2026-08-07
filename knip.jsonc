@@ -28,6 +28,13 @@
       "ignoreDependencies": [
         // Underlying code coverage engine used in unit tests
         "c8",
+        // Consumed by the type-check gate rather than by any `require()`, so
+        // Knip cannot see the reference. `eslint-scope`'s own declarations do
+        // `import type * as ESTree from "estree"`; `skipLibCheck` is the only
+        // reason that is not already an error. It is declared explicitly
+        // because it otherwise reaches this repo only through a lint plugin's
+        // dependency tree, where an unrelated upgrade can drop it.
+        "@types/estree",
       ],
     },
     "docs": {
