@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+
+    /*
+     * Checking is opted into per file with a `// @ts-check` pragma rather
+     * than switched on for every `.js` file in the program. A file only
+     * reaches the compiler once something in the allowlist requires it, and
+     * a transitive dependency that has not been annotated yet must not fail
+     * the build for the file that pulled it in. `tsconfig.json` names the
+     * files that are converted; the pragma is what makes them checked.
+     */
+    "checkJs": false,
+
+    "strict": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    /*
+     * Third-party declarations are not ours to fix, and several
+     * dependencies do not compile clean under `strict`. Errors in our own
+     * sources are unaffected.
+     */
+    "skipLibCheck": true,
+
+    "forceConsistentCasingInFileNames": true
+  }
+}

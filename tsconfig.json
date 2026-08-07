@@ -1,0 +1,59 @@
+{
+  /*
+   * The type-checking gate. `files` is the allowlist of JavaScript sources
+   * that are annotated and must type-check clean under `strict: true`. It
+   * grows bottom-up along the dependency graph — a module is added only once
+   * everything it depends on is already annotated, so no shape is ever
+   * asserted before it has been verified.
+   *
+   * Run with `npm run lint:types`. Every listed file must also carry a
+   * `// @ts-check` pragma; `tests/lib/types/types.js` enforces that the two
+   * lists agree.
+   */
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": [
+    // The hand-authored vocabulary and its escape hatches.
+    "lib/types/core.d.ts",
+    "lib/types/vendor.d.ts",
+
+    // conf/
+    "conf/ecma-version.js",
+
+    // lib/shared/ — dependency-free leaf utilities.
+    "lib/shared/assert.js",
+    "lib/shared/ast-utils.js",
+    "lib/shared/deep-merge-arrays.js",
+    "lib/shared/directives.js",
+    "lib/shared/flags.js",
+    "lib/shared/logging.js",
+    "lib/shared/message-counts.js",
+    "lib/shared/naming.js",
+    "lib/shared/option-utils.js",
+    "lib/shared/relative-module-resolver.js",
+    "lib/shared/serialization.js",
+    "lib/shared/severity.js",
+    "lib/shared/stats.js",
+    "lib/shared/string-utils.js",
+    "lib/shared/text-table.js",
+
+    // lib/cli-engine/
+    "lib/cli-engine/hash.js",
+
+    // lib/linter/
+    "lib/linter/interpolate.js",
+    "lib/linter/timing.js",
+    "lib/linter/code-path-analysis/id-generator.js",
+
+    // lib/rules/utils/
+    "lib/rules/utils/code-path-utils.js",
+    "lib/rules/utils/keywords.js",
+    "lib/rules/utils/lazy-loading-rule-map.js",
+    "lib/rules/utils/regular-expressions.js",
+
+    // packages/js/
+    "packages/js/src/index.js"
+  ]
+}

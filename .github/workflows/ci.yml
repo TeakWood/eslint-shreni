@@ -36,6 +36,11 @@ jobs:
             - name: Lint Files
               run: node Makefile lint
 
+            # `node Makefile lint` already type-checks the allowlist. This
+            # additionally proves the declarations can be generated from it.
+            - name: Build Type Declarations
+              run: npm run build:types
+
             - name: Check Rule Files
               run: node Makefile checkRuleFiles
 
