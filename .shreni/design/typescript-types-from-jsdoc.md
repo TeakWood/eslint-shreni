@@ -885,3 +885,58 @@ devDependency **or** by a `declare module` block in `lib/types/vendor.d.ts`, and
 never by both. Adding a new `needs-@types` dependency fails that test, and so
 does half of the `y6r.17` swap — deleting the `imurmurhash` ambient without
 declaring `@types/imurmurhash`, or declaring it without deleting the ambient.
+
+## Writing a probe suite
+
+Compiling an in-memory probe against the installed `node_modules` is this
+epic's established way of testing a declaration the gate cannot reach, and every
+remaining annotation bead reuses it. The pattern has one sharp edge, and it has
+already cut four suites, so it is written down here rather than left to be
+rediscovered.
+
+### Compiler host keys MUST be forward-slash normalized
+
+A probe suite builds a `ts.CompilerHost` whose `getSourceFile` / `fileExists` /
+`readFile` overrides serve synthetic sources out of a `Map` keyed by absolute
+path. Build that key with `path.join` alone and it is correct on POSIX and wrong
+on Windows: TypeScript runs `normalizePath` over every root name and asks the
+host for **forward-slash** paths on every platform, so a
+`D:\a\repo\lib\probe.ts` key never matches what the host is asked for. The
+override falls through to the real filesystem, the file is not there, and the
+probe leaves the program.
+
+The failure mode is what makes this worth a rule. A dropped probe produces no
+diagnostics, so every `expectError` assertion built on it — "this source must
+NOT compile" — passes on an empty array and asserts the opposite of the truth,
+and `program.getSourceFile()` returns `undefined`, which crashes inside the
+checker at `getSymbolAtLocation`. That is 26 of the 28 Windows failures the
+`6qe.2` bead fixed, and the count had grown 2 → 7 → 13 → 28 as each suite
+landed, because each new suite copied the same host construction.
+
+So, in every suite:
+
+- Build host keys, `.d.ts` root names, and anything later handed to
+  `program.getSourceFile()` with `probePath()` from
+  `tests/_utils/type-probe-paths.js` — one convention per file, not two that
+  differ by accident.
+- Call `assertProbesLoaded(program, roots)` immediately after
+  `ts.createProgram`. A key that is wrong again then fails loudly instead of
+  quietly inverting an assertion.
+
+`tests/lib/types/probe-host-paths.js` enforces both. It also demonstrates the
+bug and the fix on whatever platform it runs on — `normalizeSlashes` rewrites
+backslashes everywhere, so a backslash-keyed host reproduces the Windows
+behaviour exactly on macOS and Linux — and it fails when a _new_ suite in
+`tests/lib/types/` builds a compiler host without the helper.
+
+### Do not launch `node_modules/.bin/tsc`
+
+A suite that shells out to the compiler must invoke
+`node_modules/typescript/bin/tsc` through `process.execPath`, never the `.bin`
+shim. On Windows npm writes `tsc.cmd` and `tsc.ps1` there, and the
+extension-less `tsc` is a POSIX shell script `CreateProcess` cannot execute:
+`spawnSync` fails _before launch_, leaving `status` null and both streams empty
+— indistinguishable from a clean run until you notice the assertion message has
+nothing in it. Choosing `tsc.cmd` on `win32` instead would work but requires
+`shell: true`, which is worse. `tests/lib/types/types.js` pins the entry-point
+form.

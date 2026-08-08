@@ -32,12 +32,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
 
+const {
+	probePath,
+	assertProbesLoaded,
+} = require("../../_utils/type-probe-paths");
+
 //------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const VENDOR_DTS = path.join(REPO_ROOT, "lib/types/vendor.d.ts");
+const VENDOR_DTS = probePath(REPO_ROOT, "lib/types/vendor.d.ts");
 
 /**
  * Where the synthetic probe files are placed. They are never written to disk —
@@ -45,7 +50,7 @@ const VENDOR_DTS = path.join(REPO_ROOT, "lib/types/vendor.d.ts");
  * `lib/` so that bare specifiers resolve against `node_modules/` exactly as
  * they do for a real source file.
  */
-const PROBE_DIR = path.join(REPO_ROOT, "lib");
+const PROBE_DIR = probePath(REPO_ROOT, "lib");
 
 /**
  * Mirrors the resolution-relevant options of the shipped gate
@@ -91,11 +96,16 @@ const DECLARED_MODULES = [
 function compile(files) {
 	/**
 	 * Resolves a probe file name to its path inside the repo.
+	 *
+	 * The key MUST be forward-slash normalized — `probePath`, never bare
+	 * `path.join`. TypeScript normalizes root names and asks the host below for
+	 * forward-slash paths on every platform, so a Windows-native key never
+	 * matches and the probe is silently dropped from the program.
 	 * @param {string} name The probe file name.
 	 * @returns {string} The absolute path.
 	 */
 	function absolute(name) {
-		return path.join(PROBE_DIR, name);
+		return probePath(PROBE_DIR, name);
 	}
 
 	const contents = new Map(
@@ -126,6 +136,8 @@ function compile(files) {
 		COMPILER_OPTIONS,
 		host,
 	);
+
+	assertProbesLoaded(program, [VENDOR_DTS, ...contents.keys()]);
 
 	/*
 	 * Only syntactic and semantic diagnostics are collected. Global diagnostics
@@ -230,7 +242,7 @@ function typeTextOf(program, fileName, binding) {
 function shipsOwnDeclarations(specifier) {
 	const { resolvedModule } = ts.resolveModuleName(
 		specifier,
-		path.join(PROBE_DIR, "resolution-probe.js"),
+		probePath(PROBE_DIR, "resolution-probe.js"),
 		{
 			allowJs: true,
 			moduleResolution: ts.ModuleResolutionKind.Node16,
@@ -397,7 +409,7 @@ describe("vendor ambient declarations", () => {
 			assert.strictEqual(
 				typeTextOf(
 					program,
-					path.join(PROBE_DIR, "esutils-ast-probe.ts"),
+					probePath(PROBE_DIR, "esutils-ast-probe.ts"),
 					"trailing",
 				),
 				"StatementNode | null",
@@ -610,7 +622,7 @@ describe("vendor ambient declarations", () => {
 			assert.strictEqual(
 				typeTextOf(
 					program,
-					path.join(PROBE_DIR, "file-entry-cache-shape-probe.ts"),
+					probePath(PROBE_DIR, "file-entry-cache-shape-probe.ts"),
 					"messages",
 				),
 				"LintMessage[]",

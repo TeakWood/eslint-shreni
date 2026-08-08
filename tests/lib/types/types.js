@@ -30,7 +30,15 @@ const { execFileSync } = require("node:child_process");
 
 const ROOT_DIR = path.resolve(__dirname, "../../..");
 const TSCONFIG_PATH = path.join(ROOT_DIR, "tsconfig.json");
-const TSC_PATH = path.join(ROOT_DIR, "node_modules/.bin/tsc");
+/*
+ * The compiler is invoked through Node rather than the `node_modules/.bin/tsc`
+ * shim. On Windows npm writes `tsc.cmd` and `tsc.ps1` there, and the
+ * extension-less `tsc` is a POSIX shell script that `CreateProcess` cannot
+ * execute: `spawnSync` fails before launch, leaving `status` null and both
+ * streams empty, so the failure surfaces as an empty "tsc reported errors:"
+ * message. Running the compiler's own entry point sidesteps the split.
+ */
+const TSC_PATH = path.join(ROOT_DIR, "node_modules/typescript/bin/tsc");
 
 /**
  * The `tsconfig*.json` files are JSONC, so `JSON.parse` cannot read them
@@ -56,17 +64,30 @@ function readJsonc(filePath) {
  */
 function runTsc(project) {
 	try {
-		const output = execFileSync(TSC_PATH, ["-p", project], {
-			cwd: ROOT_DIR,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		const output = execFileSync(
+			process.execPath,
+			[TSC_PATH, "-p", project],
+			{
+				cwd: ROOT_DIR,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+			},
+		);
 
 		return { code: 0, output };
 	} catch (error) {
+		/*
+		 * A null status means the process never launched rather than that the
+		 * compiler reported anything, and both streams are empty in that case.
+		 * Carry the spawn error through so the failure is readable instead of
+		 * an empty "tsc reported errors:" message.
+		 */
 		return {
-			code: error.status,
-			output: `${error.stdout || ""}${error.stderr || ""}`,
+			code: error.status ?? -1,
+			output:
+				error.status === null
+					? error.message
+					: `${error.stdout || ""}${error.stderr || ""}`,
 		};
 	}
 }
@@ -171,6 +192,23 @@ describe("types", () => {
 			const { code, output } = runTsc(TSCONFIG_PATH);
 
 			assert.strictEqual(code, 0, `tsc reported errors:\n${output}`);
+		});
+
+		/*
+		 * The `node_modules/.bin` entry is a POSIX shell script that Windows
+		 * cannot launch directly, and `spawnSync` failing before launch is
+		 * indistinguishable from a clean run with an empty output — it reports
+		 * a null status and two empty streams. Pin the entry point instead.
+		 */
+		it("invokes the compiler through Node rather than the .bin shim", () => {
+			assert.isTrue(
+				fs.existsSync(TSC_PATH),
+				`${TSC_PATH} does not exist, so tsc cannot be launched`,
+			);
+			assert.notInclude(
+				TSC_PATH.replaceAll(path.sep, "/"),
+				"node_modules/.bin/",
+			);
 		});
 
 		it("has strict mode enabled", () => {

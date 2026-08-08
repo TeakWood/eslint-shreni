@@ -28,6 +28,11 @@ const path = require("node:path");
 const ts = require("typescript");
 const espree = require("espree");
 
+const {
+	probePath,
+	assertProbesLoaded,
+} = require("../../_utils/type-probe-paths");
+
 //------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
@@ -43,7 +48,7 @@ const DESIGN_NOTE = path.join(
  * the compiler host below serves them from memory — but they need a path
  * inside the repo so that bare specifiers resolve against `node_modules/`.
  */
-const PROBE_DIR = path.join(REPO_ROOT, "lib");
+const PROBE_DIR = probePath(REPO_ROOT, "lib");
 
 /**
  * Mirrors the resolution-relevant options of the shipped gate, including
@@ -76,11 +81,16 @@ function compile(files, overrides = {}) {
 
 	/**
 	 * Resolves a probe file name to its path inside the repo.
+	 *
+	 * The key MUST be forward-slash normalized — `probePath`, never bare
+	 * `path.join`. TypeScript normalizes root names and asks the host below for
+	 * forward-slash paths on every platform, so a Windows-native key never
+	 * matches and the probe is silently dropped from the program.
 	 * @param {string} name The probe file name.
 	 * @returns {string} The absolute path.
 	 */
 	function absolute(name) {
-		return path.join(PROBE_DIR, name);
+		return probePath(PROBE_DIR, name);
 	}
 
 	const contents = new Map(
@@ -107,6 +117,8 @@ function compile(files, overrides = {}) {
 			: readFile.call(host, fileName);
 
 	const program = ts.createProgram([...contents.keys()], options, host);
+
+	assertProbesLoaded(program, contents.keys());
 
 	/*
 	 * Only semantic and syntactic diagnostics are collected. Global

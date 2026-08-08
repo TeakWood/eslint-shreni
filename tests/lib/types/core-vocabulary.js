@@ -39,13 +39,17 @@ const { flatConfigSchema } = require("../../../lib/config/flat-config-schema");
 const {
 	validateLanguageOptions,
 } = require("../../../lib/languages/js/validate-language-options");
+const {
+	probePath,
+	assertProbesLoaded,
+} = require("../../_utils/type-probe-paths");
 
 //------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const CORE_DTS = path.join(REPO_ROOT, "lib/types/core.d.ts");
+const CORE_DTS = probePath(REPO_ROOT, "lib/types/core.d.ts");
 const RULE_FIXER_JS = path.join(REPO_ROOT, "lib/linter/rule-fixer.js");
 const SOURCE_CODE_JS = path.join(
 	REPO_ROOT,
@@ -57,7 +61,7 @@ const SOURCE_CODE_JS = path.join(
  * `./types/core.js` and bare specifiers resolve exactly as they would for a
  * real source file.
  */
-const PROBE_DIR = path.join(REPO_ROOT, "lib");
+const PROBE_DIR = probePath(REPO_ROOT, "lib");
 
 /**
  * Mirrors the resolution-relevant options of the shipped gate
@@ -80,9 +84,15 @@ const COMPILER_OPTIONS = {
  * program and its diagnostics.
  */
 function compile(files) {
+	/*
+	 * Host keys MUST be forward-slash normalized — `probePath`, never bare
+	 * `path.join`. TypeScript normalizes root names and asks the host below for
+	 * forward-slash paths on every platform, so a Windows-native key never
+	 * matches and the probe is silently dropped from the program.
+	 */
 	const contents = new Map(
 		Object.entries(files).map(([name, text]) => [
-			path.join(PROBE_DIR, name),
+			probePath(PROBE_DIR, name),
 			text,
 		]),
 	);
@@ -111,6 +121,8 @@ function compile(files) {
 		COMPILER_OPTIONS,
 		host,
 	);
+
+	assertProbesLoaded(program, [CORE_DTS, ...contents.keys()]);
 
 	const diagnostics = [
 		...program.getSyntacticDiagnostics(),
