@@ -22,7 +22,8 @@
     // conf/
     "conf/ecma-version.js",
 
-    // lib/shared/ — dependency-free leaf utilities.
+    // lib/shared/ — the leaf layer. Requires nothing else inside lib/.
+    "lib/shared/ajv.js",
     "lib/shared/assert.js",
     "lib/shared/ast-utils.js",
     "lib/shared/deep-merge-arrays.js",
@@ -33,11 +34,14 @@
     "lib/shared/naming.js",
     "lib/shared/option-utils.js",
     "lib/shared/relative-module-resolver.js",
+    "lib/shared/runtime-info.js",
     "lib/shared/serialization.js",
     "lib/shared/severity.js",
     "lib/shared/stats.js",
     "lib/shared/string-utils.js",
     "lib/shared/text-table.js",
+    "lib/shared/translate-cli-options.js",
+    "lib/shared/traverser.js",
 
     // lib/cli-engine/
     "lib/cli-engine/hash.js",

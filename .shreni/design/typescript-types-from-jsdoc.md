@@ -941,6 +941,65 @@ nothing in it. Choosing `tsc.cmd` on `win32` instead would work but requires
 `shell: true`, which is worse. `tests/lib/types/types.js` pins the entry-point
 form.
 
+## Annotating a source file
+
+Two things fell out of converting the four dependency-blocked files in
+`lib/shared` (`ajv.js`, `traverser.js`, `translate-cli-options.js`,
+`runtime-info.js`) that every later annotation bead will hit.
+
+### A nullable method slot cannot be hoisted into a local
+
+`Traverser` stores its visitors in `this._enter` / `this._leave`, `null` until
+`traverse()` runs, and `_traverse` calls them as `this._enter(node, parent)`.
+Under `strict`, that is `TS2721: cannot invoke an object which is possibly
+null`, and the obvious fix — narrow once into a local and call the local — is a
+**silent runtime break**. Visitors are invoked as methods and real ones depend
+on it: `hasDynamicExpressions` in
+`lib/rules/no-unmodified-loop-condition.js:243` calls `this.break()` and
+`this.skip()` from inside `enter`. Hoisting drops that binding, and nothing
+type-checks it away.
+
+The form that works is a cast around the member expression and nothing else:
+
+```js
+/** @type {TraverserVisitor} */ (this._enter)(node, parent);
+```
+
+Parentheses around a member expression preserve the reference, so the call is
+still a method call — the cast is a comment and the emitted code is unchanged.
+Then give the callback typedef an explicit `this` parameter
+(`(this: Traverser, node: ASTNode, …) => void`) so the binding is part of the
+declared contract rather than an accident the next reader can hoist away again.
+
+The general rule: when `strict` complains about a `null`-initialized slot, check
+whether the value is _called_ before reaching for a local. Escape hatches that
+are comment-only are safe; the ones that move code are not.
+
+### `lib/shared` is a leaf, and that is now enforced
+
+`lib/shared` requires nothing else inside `lib/` — only Node builtins, external
+packages, other `lib/shared` files, and the root `package.json`. That is the
+whole reason it could be annotated before anything else, and a single
+`require("../linter/…")` would destroy it without failing any existing gate.
+`tests/lib/types/shared-leaf.js` scans the directory's `require()` and dynamic
+`import()` specifiers and fails on a relative one that resolves inside `lib/`
+but outside `lib/shared/`.
+
+That suite also carries the two-sided compile probes for the four files. They
+are worth having even though these files _are_ in the allowlist and _are_
+compiled by the gate: an undocumented parameter in a `.js` file is an implicit
+`any`, and `any` type-checks clean forever. "The gate is green" and "the module
+is typed" are different claims, and only the probes assert the second.
+
+### Types that belong to a later phase
+
+`translate-cli-options.js` needs two shapes that are not in `core.d.ts`: the
+parsed CLI options `optionator` produces, and the `ESLint` constructor options
+it returns. Both were declared as local `@typedef`s in the file rather than
+added to the vocabulary, because the CLI and `lib/eslint/` are annotated in
+phase 3+ and that is where those types belong. Each carries a comment saying so.
+When those phases land, **move** them — do not leave a second copy behind.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the
