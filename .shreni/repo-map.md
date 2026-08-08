@@ -17,7 +17,7 @@ reading the code, and it omits tests and generated files.
 
 ## conf
 
-- `ecma-version.js` — Configuration related to ECMAScript versions @author Milos Djermanovic
+- `ecma-version.js` — -check
 - `globals.js` — Globals for ecmaVersion/sourceType @author Nicholas C. Zakas
 
 ## coverage/lcov-report
@@ -94,7 +94,7 @@ reading the code, and it omits tests and generated files.
 
 ## lib/cli-engine
 
-- `hash.js` — Defining the hashing function in one place. @author Michael Ficarra
+- `hash.js` — -check
 - `lint-result-cache.js` — Utility for caching lint results. @author Kevin Partington
 
 ## lib/cli-engine/formatters
@@ -152,13 +152,13 @@ reading the code, and it omits tests and generated files.
 - `file-context.js` — The FileContext class. @author Nicholas C. Zakas
 - `file-report.js` — A class to track messages reported by the linter for a file. @author Nicholas C. Zakas
 - `index.js`
-- `interpolate.js` — Interpolate keys from an object into a string with {{ }} markers. @author Jed Fox
+- `interpolate.js` — -check
 - `linter.js` — Main Linter Class @author Gyandeep Singh @author aladdin-add
 - `rule-fixer.js` — An object that creates fix commands for rules. @author Nicholas C. Zakas
 - `source-code-fixer.js` — An object that caches and applies source code fixes. @author Nicholas C. Zakas
 - `source-code-traverser.js` — Traverser for SourceCode objects. @author Nicholas C. Zakas
 - `source-code-visitor.js` — SourceCodeVisitor class @author Nicholas C. Zakas
-- `timing.js` — Tracks performance of individual rules. @author Brandon Mills
+- `timing.js` — -check
 - `vfile.js` — Virtual file @author Nicholas C. Zakas
 
 ## lib/linter/code-path-analysis
@@ -169,7 +169,7 @@ reading the code, and it omits tests and generated files.
 - `code-path.js` — A class of the code path. @author Toru Nagashima
 - `debug-helpers.js` — Helpers to debug for code path analysis. @author Toru Nagashima
 - `fork-context.js` — A class to operate forking. This is state of forking. This has a fork list and manages it.
-- `id-generator.js` — A class of identifiers generator for code path segments. Each rule uses the identifier of code path…
+- `id-generator.js` — -check
 
 ## lib/rule-tester
 
@@ -313,5 +313,8 @@ reading the code, and it omits tests and generated files.
 - `no-invalid-regexp.js` — Validate strings passed to the RegExp constructor @author Michael Ficarra
 - `no-invalid-this.js` — A rule to disallow `this` keywords in contexts where the value of `this` is `undefined`.
 - `no-irregular-whitespace.js` — Rule to disallow whitespace that is not a tab or space, whitespace inside strings and comments are…
+- `no-iterator.js` — Rule to flag usage of **iterator** property @author Ian Christian Myers
+- `no-label-var.js` — Rule to flag labels that are the same as an identifier @author Ian Christian Myers
+- `no-labels.js` — Disallow Labeled Statements @author Nicholas C. Zakas
 
-_Map truncated at 234/600 files to fit the prompt budget. Grep for anything not listed._
+_Map truncated at 237/600 files to fit the prompt budget. Grep for anything not listed._
