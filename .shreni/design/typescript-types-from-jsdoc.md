@@ -182,6 +182,17 @@ Consumed surface, complete:
   ambient version should give it a real return type — this one is on the
   `ast-utils` critical path.
 
+All three blocks are now written. One carries a debt worth naming: the node
+union the AST spike below settles on is authored by a later bead and does not
+exist yet, so `trailingStatement` is declared against a placeholder
+`StatementNode` in the same block — `type`, plus the `range` and `loc` that
+ESLint guarantees on every node, reusing `core.d.ts` for the position types
+rather than re-declaring them. It is a real type rather than `any`, and
+`tests/lib/types/vendor.js` pins the return to `StatementNode | null` so a
+regression to `any` fails. When the node union lands, re-point that one
+signature at `Statement | null` and delete the placeholder; nothing else in the
+block changes.
+
 #### `file-entry-cache@8.0.0`
 
 Two DT versions exist and neither works. `@types/file-entry-cache@10.0.87`
