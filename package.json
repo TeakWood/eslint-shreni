@@ -145,6 +145,7 @@
     "@types/esquery": "^1.5.4",
     "@types/estree": "^1.0.9",
     "@types/glob-parent": "^5.1.3",
+    "@types/imurmurhash": "^0.1.4",
     "@types/is-glob": "^4.0.4",
     "@types/json-stable-stringify-without-jsonify": "^1.0.2",
     "@types/natural-compare": "^1.4.3",

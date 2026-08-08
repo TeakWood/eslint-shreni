@@ -1,19 +1,20 @@
 /**
  * @fileoverview Guards the DefinitelyTyped packages the type-check gate depends on.
  *
- * Six runtime dependencies ship no declarations of their own and are typed by a
- * `@types/*` package instead. Nothing `require()`s a `@types` package — the
+ * Seven runtime dependencies ship no declarations of their own and are typed by
+ * a `@types/*` package instead. Nothing `require()`s a `@types` package — the
  * compiler consumes it — so the only thing tying one to the repository is a
  * line in `devDependencies`, and the only thing tying that line to reality is a
  * test like this one.
  *
- * The gate itself cannot do that job here. No file in the `tsconfig.json`
- * allowlist requires any of these six yet, so `npm run lint:types` compiles
- * without ever resolving them: the declaration is green by construction. These
- * tests close the gap the same way `tests/lib/types/vendor.js` does for the
- * hand-written ambients — by compiling probes that mirror the real call sites,
- * two-sided, because a package that resolved to `any` would satisfy a positive
- * probe just as happily as a correct one.
+ * The gate itself mostly cannot do that job here. Only `imurmurhash` has a
+ * consumer in the `tsconfig.json` allowlist; for the other six
+ * `npm run lint:types` compiles without ever resolving them, so the declaration
+ * is green by construction. These tests close the gap the same way
+ * `tests/lib/types/vendor.js` does for the hand-written ambients — by compiling
+ * probes that mirror the real call sites, two-sided, because a package that
+ * resolved to `any` would satisfy a positive probe just as happily as a correct
+ * one.
  * @author Silpi
  */
 
@@ -165,6 +166,38 @@ const TYPED_PACKAGES = [
 		code: 2322,
 	},
 	{
+		dependency: "imurmurhash",
+		version: "0.1.4",
+		consumers: ["lib/cli-engine/hash.js:29"],
+
+		/*
+		 * The only entry here that retires a hand-written ambient rather than
+		 * filling a gap. `lib/types/vendor.d.ts` used to declare this module,
+		 * justified by a claim — "no `@types/imurmurhash` on npm" — that was
+		 * simply untrue. The DT package models the same surface and more: the
+		 * `new` form, and `hash`/`reset` returning `this` so calls chain.
+		 */
+		positive: `
+			import murmur = require("imurmurhash");
+
+			// lib/cli-engine/hash.js:29, verbatim.
+			export function hash(str: string): string {
+				return murmur(str).result().toString(36);
+			}
+
+			export const chained: number = new murmur("a")
+				.hash("b")
+				.reset(1)
+				.result();
+		`,
+		negative: `
+			import murmur = require("imurmurhash");
+
+			export const wrong: string = murmur("a").result();
+		`,
+		code: 2322,
+	},
+	{
 		dependency: "is-glob",
 		version: "4.0.4",
 		consumers: ["lib/eslint/eslint-helpers.js:174"],
@@ -276,6 +309,29 @@ function format(diagnostics) {
 }
 
 /**
+ * Resolves a bare specifier the way a CommonJS file in `lib/` resolves it.
+ * @param {string} specifier The package name to resolve.
+ * @param {string} importer Repo-relative path of the file doing the require.
+ * @returns {ts.ResolvedModuleFull | undefined} The resolution, if there is one.
+ */
+function resolveFrom(specifier, importer) {
+	return ts.resolveModuleName(
+		specifier,
+		probePath(REPO_ROOT, importer),
+		{
+			allowJs: true,
+			moduleResolution: ts.ModuleResolutionKind.Node16,
+			module: ts.ModuleKind.Node16,
+			target: ts.ScriptTarget.ES2022,
+		},
+		ts.sys,
+		void 0,
+		void 0,
+		ts.ModuleKind.CommonJS,
+	).resolvedModule;
+}
+
+/**
  * Reads the installed version of a package.
  * @param {string} specifier The package name.
  * @returns {string} The installed version.
@@ -359,6 +415,41 @@ describe("declared @types packages", () => {
 			});
 		});
 	}
+
+	/*
+	 * `imurmurhash` is the one dependency here whose consumer —
+	 * `lib/cli-engine/hash.js` — is already in the `tsconfig.json` allowlist, so
+	 * `npm run lint:types` really does resolve it. That makes it tempting to
+	 * treat a green gate as proof; it is not. Deleting the ambient block and
+	 * declaring nothing would leave `require("imurmurhash")` an implicit `any`,
+	 * and `any` compiles clean forever. These tests pin where the declarations
+	 * actually come from.
+	 */
+	describe("the retired imurmurhash ambient", () => {
+		const vendorSource = fs.readFileSync(VENDOR_DTS, "utf8");
+
+		it("is no longer hand-written in lib/types/vendor.d.ts", () => {
+			assert.notInclude(
+				vendorSource,
+				'declare module "imurmurhash"',
+				"@types/imurmurhash types this dependency now. A hand-written ambient alongside it is an escape hatch with nothing to escape.",
+			);
+		});
+
+		it("still has no declarations of its own to fall back on", () => {
+			const resolved = resolveFrom(
+				"imurmurhash",
+				"lib/cli-engine/hash.js",
+			);
+
+			assert.isTrue(
+				/[\\/]@types[\\/]imurmurhash[\\/]/u.test(
+					resolved?.resolvedFileName ?? "",
+				),
+				`hash.js's require("imurmurhash") must resolve to @types/imurmurhash, not to ${resolved?.resolvedFileName ?? "nothing"}. If imurmurhash has started shipping its own types, drop the DT package instead.`,
+			);
+		});
+	});
 
 	describe("coverage of the audit's needs-@types bucket", () => {
 		/*

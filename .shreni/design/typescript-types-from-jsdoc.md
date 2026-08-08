@@ -803,22 +803,36 @@ believed.
 ## The `@types` packages the gate depends on
 
 `eslint-shreni-beads-y6r.16`. The audit's follow-up item 2 — declare the
-`needs-@types` bucket — is now done. Six DefinitelyTyped packages join the three
-declared with the gate itself:
+`needs-@types` bucket — is now done. Seven DefinitelyTyped packages join the
+three declared with the gate itself:
 
 | Package                                              | Types                                         | Consumed at                                                                                                              |
 | ---------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `@types/cross-spawn@6.0.6`                           | `cross-spawn@7.0.6`                           | `lib/shared/runtime-info.js:53`, `lib/cli.js:268`, `bin/eslint.js:72`                                                    |
 | `@types/esquery@1.5.4`                               | `esquery@1.7.0`                               | `lib/linter/esquery.js:253,309`                                                                                          |
 | `@types/glob-parent@5.1.3`                           | `glob-parent@6.0.2`                           | `lib/eslint/eslint-helpers.js:589`                                                                                       |
+| `@types/imurmurhash@0.1.4`                           | `imurmurhash@0.1.4`                           | `lib/cli-engine/hash.js:29`                                                                                              |
 | `@types/is-glob@4.0.4`                               | `is-glob@4.0.3`                               | `lib/eslint/eslint-helpers.js:174`                                                                                       |
 | `@types/json-stable-stringify-without-jsonify@1.0.2` | `json-stable-stringify-without-jsonify@1.0.1` | `lib/cli-engine/lint-result-cache.js:54`, `lib/rule-tester/rule-tester.js:22`, `lib/services/suppressions-service.js:15` |
 | `@types/natural-compare@1.4.3`                       | `natural-compare@1.4.0`                       | `lib/rules/sort-keys.js:55,58`                                                                                           |
 
-`@types/imurmurhash` is deliberately absent: `imurmurhash` is answered today by a
-hand-written block in `lib/types/vendor.d.ts`, and swapping the two is
-`y6r.17`'s job. No runtime dependency changed — every package above is
-compile-time only.
+No runtime dependency changed — every package above is compile-time only.
+
+`@types/imurmurhash` arrived last, in `eslint-shreni-beads-y6r.17`, replacing a
+hand-written ambient block in `lib/types/vendor.d.ts` whose stated reason —
+"no `@types/imurmurhash` on npm" — was false. That is the reverse of the
+`esutils` / `file-entry-cache` / `@humanwhocodes/module-importer` decision below,
+and the two directions are decided by the same test rather than by preference:
+adopt the DefinitelyTyped package when it compiles against the real call site,
+hand-author when it does not. Here it does, and the DT package is the better
+declaration besides — it models the `new` form and the chaining
+`hash()`/`reset()` return that the hand-written block flattened.
+
+It is also the only entry in this table whose consumer, `lib/cli-engine/hash.js`,
+is already in the `tsconfig.json` allowlist. That does not make its probes
+redundant: dropping the ambient without declaring anything leaves
+`require("imurmurhash")` an implicit `any`, and `any` compiles clean forever. The
+suite pins the resolution to `node_modules/@types/imurmurhash` explicitly.
 
 DefinitelyTyped versions its packages against a major rather than a patch, so
 most of the version gaps in that table are cosmetic. Two are real major-version
@@ -857,34 +871,47 @@ are authored to stay assignable at estree boundaries, and
 nothing in the repository depends on a package called `estree` — Knip saw an
 unused devDependency and was right to.
 
-None of these six needs one. Knip resolves `@types/x` through `x`, and all six
-runtime counterparts are declared dependencies with live `require()` sites, so
-each `@types` package is attributed to a used dependency. Verified rather than
-assumed: `npx knip` before and after this change reports the identical two
-findings (`lib/eslint/worker.js` unused, and the `packages/js` `eslint` hint),
-and adding a redundant ignore entry would have been silently wrong in the other
-direction — Knip reports unnecessary ignores as configuration hints.
+None of these seven needs one. Knip resolves `@types/x` through `x`, and all
+seven runtime counterparts are declared dependencies with live `require()` sites,
+so each `@types` package is attributed to a used dependency. Verified rather than
+assumed, each time one was added: `npx knip` reports the same findings before and
+after — at `y6r.16` that was two (`lib/eslint/worker.js` unused, and the
+`packages/js` `eslint` hint); since `6qe.1` closed both, it is exit 0 with an
+empty report, and `@types/imurmurhash` left it that way. Adding a redundant
+ignore entry would have been silently wrong in the other direction — Knip reports
+unnecessary ignores as configuration hints.
 
-### The gate cannot check any of this yet
+### The gate can check almost none of this yet
 
-Not one of these six has a consumer in the `tsconfig.json` allowlist —
-`runtime-info.js`, `esquery.js`, `eslint-helpers.js`, `lint-result-cache.js` and
-`sort-keys.js` are all converted by later beads. So `npm run lint:types` compiles
-without ever resolving a single one of them, and a green gate says nothing.
+Only `@types/imurmurhash` has a consumer in the `tsconfig.json` allowlist. The
+other six do not — `runtime-info.js`, `esquery.js`, `eslint-helpers.js`,
+`lint-result-cache.js` and `sort-keys.js` are all converted by later beads — so
+`npm run lint:types` compiles without ever resolving them, and a green gate says
+nothing about those.
+
+Nor does it say much about the one it does resolve. An unresolved bare specifier
+in a `// @ts-check` file is an implicit `any`, and `any` compiles clean forever,
+so "the gate is green" and "the dependency is typed" stay different claims even
+for `hash.js`.
 
 This is the same structural gap `tests/lib/types/vendor.js` closes for the
 ambient declarations, and it is closed the same way.
 `tests/lib/types/declared-types-packages.js` compiles a probe per package that
 mirrors the real call site, pairs each with a negative probe asserting a specific
 error code (so a package resolving to `any` fails rather than passing), and pins
-the installed version against the one the y6r.1 audit actually verified.
+the installed version against the one the y6r.1 audit actually verified. For
+`imurmurhash` it additionally pins where the declarations come from, resolving
+the specifier the way `hash.js` does and requiring the answer to land in
+`node_modules/@types/imurmurhash`.
 
-It also guards the bucket as a whole rather than just the six: every
+It also guards the bucket as a whole rather than just the seven: every
 `needs-@types` row in the verdict table above must be answered by a `@types`
 devDependency **or** by a `declare module` block in `lib/types/vendor.d.ts`, and
 never by both. Adding a new `needs-@types` dependency fails that test, and so
-does half of the `y6r.17` swap — deleting the `imurmurhash` ambient without
+would half of the `y6r.17` swap have — deleting the `imurmurhash` ambient without
 declaring `@types/imurmurhash`, or declaring it without deleting the ambient.
+That is the guard doing the job it was written for: the swap could not land in
+one direction only.
 
 ## Writing a probe suite
 

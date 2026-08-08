@@ -74,8 +74,12 @@ const DECLARATION_EXTENSIONS = new Set([
 ]);
 
 /**
- * The three modules this file declares, in the order they appear in
- * `vendor.d.ts` alongside the pre-existing `imurmurhash` block.
+ * Every module `vendor.d.ts` declares, in the order it declares them.
+ *
+ * `imurmurhash` was a fourth until `@types/imurmurhash` replaced it; the block
+ * that must not come back is guarded in
+ * `tests/lib/types/declared-types-packages.js`, next to the package that
+ * retired it.
  */
 const DECLARED_MODULES = [
 	"@humanwhocodes/module-importer",
