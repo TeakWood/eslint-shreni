@@ -569,6 +569,21 @@ target.buildTypes = function () {
 
 	mkdir("-p", vocabularyOutDir);
 	cp("lib/types/*.d.ts", vocabularyOutDir);
+
+	/*
+	 * `@eslint/js` is published as its own tarball, and `dist/types/` above is
+	 * outside it, so nothing emitted there can ever reach a consumer of that
+	 * package. It emits its own declarations into `packages/js/dist/`, which is
+	 * what its `exports` `types` conditions point at and what its `files` array
+	 * packs. `npm run test:types:packaged` checks that they resolve.
+	 */
+	const packageReturn = exec(
+		`${getBinFile("tsc")} -p packages/js/tsconfig.types.json`,
+	);
+
+	if (packageReturn.code !== 0) {
+		exit(1);
+	}
 };
 
 target.lintDocsJS = function ([fix = false] = []) {

@@ -65,8 +65,10 @@
     "lib/rules/utils/unicode/is-regional-indicator-symbol.js",
     "lib/rules/utils/unicode/is-surrogate-pair.js",
 
-    // packages/js/
-    "packages/js/src/index.js"
+    // packages/js/ — no require edge into lib/, so it stands entirely alone.
+    "packages/js/src/index.js",
+    "packages/js/src/configs/eslint-all.js",
+    "packages/js/src/configs/eslint-recommended.js"
   ],
 
   /*

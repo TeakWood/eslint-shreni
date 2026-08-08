@@ -1215,3 +1215,100 @@ compiler — resolving the shipped `tsconfig.json`, overlaying the
 `program.getOptionsDiagnostics()`. **TS5107 is present without the `ts-node`
 key's compiler options and absent with them**, so deleting the key fails the
 suite rather than quietly re-breaking Browser Test.
+
+## Publishing a package's declarations
+
+`@eslint/js` is the first package in this repo to ship types, and it is the
+cheapest one that could: `packages/js/src` has zero `require` edges into `lib/`
+and no runtime dependencies at all. Its whole public surface is one object with
+two keys.
+
+### Emitted is not resolved
+
+The repo-root `tsconfig.types.json` emits into `dist/types/` at the root. That
+directory is **outside `packages/js`**, so nothing emitted there can ever reach
+a consumer of that tarball — the published contents are exactly what
+`packages/js/package.json`'s `files` array lists. The package therefore emits
+its own declarations, through `packages/js/tsconfig.types.json`, into its own
+`dist/`, and `target.buildTypes` in `Makefile.js` runs both.
+
+`rootDir` is the package directory rather than `src`, because `src/index.js`
+reads `../package.json` and `resolveJsonModule` makes that JSON file an input to
+the program — an input outside `rootDir` is TS6059. Output therefore lands at
+`dist/src/*.d.ts`, and that is the path the `types` conditions name.
+
+### The `exports` trap, and why the compiler alone will not catch it
+
+The phase-0 audit's most consequential finding was
+`@humanwhocodes/module-importer`: it ships `dist/module-importer.d.ts` **and**
+sets a top-level `types` field, and TypeScript still cannot see either, because
+its `exports` map has no `types` condition — and once an `exports` map is
+present the top-level `types` field is **ignored**. We hand-wrote an ambient
+module for it in `lib/types/vendor.d.ts`. Our own package must not become
+somebody else's version of that bug.
+
+Two rules, both now pinned by `tests/lib/types/js-package.js`:
+
+- Put a `types` condition **inside** every conditional `exports` entry. Keep the
+  top-level `types` field as well, for resolvers that predate `exports` maps,
+  but never rely on it.
+- Put `types` **first** in each condition object. Conditions match in
+  declaration order, so a `types` key after `default` is unreachable.
+
+> **The compiler will not tell you the order is wrong.** Moving `types` after
+> `default` was mutation-tested: all fifteen resolution probes in the suite kept
+> passing, and only the explicit key-order assertion and `@arethetypeswrong/cli`
+> (`FallbackCondition`) failed. That is the argument for attw belonging in this
+> phase rather than a later packaging one — the packaging question is not fully
+> answerable from the compiler side.
+
+### `eslint` is an optional peer dependency, so the types must stand alone
+
+The ideal typing of `configs.all` / `configs.recommended` would reference the
+`Config` vocabulary in `lib/types/core.d.ts`. It deliberately does not:
+`@eslint/js` declares `eslint` as an **optional** peer dependency, so a
+declaration reaching into the main package would break for every consumer who
+never installed it.
+
+Leaving the frozen config literals unannotated is not a compromise here, it is
+strictly better. Inference produces the exact rule-name-to-severity map —
+`"no-undef": "error"` and 190 siblings — which is precisely the shape user story
+3 needs for `eslint.config.ts` autocomplete. A `@type {Config}` annotation would
+_widen_ every rule name to `string` **and** create the dependency. The generated
+files say so in a header comment, and `tools/update-eslint-{all,recommended}.js`
+regenerate both that comment and the `// @ts-check` pragma — the pragma, not the
+allowlist, is what turns checking on under `checkJs: false`.
+
+The suite demonstrates the independence rather than asserting it: each
+resolution probe compiles with `types: []` and then asserts the program contains
+**no source file outside the package** apart from the default `lib` files.
+
+### `cjs-module-lexer` sees bindings, not object literals
+
+`src/index.js` used to build its export inline:
+
+```js
+module.exports = { meta: { … }, configs: { all: require(…), … } };
+```
+
+attw reported `NamedExports` with `isMissingAllNamed: true`. Node determines
+which named exports a CommonJS module offers to ESM importers with
+`cjs-module-lexer`, a **static** scan: it recognises shorthand over a binding
+but not an inline object literal whose values are expressions. So TypeScript
+happily type-checked `import { configs } from "@eslint/js"` while Node threw
+`SyntaxError: Named export 'configs' not found` — measured against real Node,
+not inferred. Hoisting the two values into `const` bindings and assigning
+`module.exports = { meta, configs }` fixes it, with no change to the object
+graph.
+
+This is a class of defect neither `tsc` nor a `.d.ts` can see, which is why the
+suite pairs the compiler's answer with a real `await import()` of the entry
+point.
+
+### `npm run test:types:packaged`
+
+`attw --pack packages/js --profile node16` packs the real tarball and checks it.
+`--profile node16` ignores the node10 resolution mode, matching this epic's
+stated floor of node16/nodenext and bundler. Phase 7, which owns the main
+`eslint` package's own `exports` map — four entries, none with a `types`
+condition today — should reuse this script rather than inventing another.

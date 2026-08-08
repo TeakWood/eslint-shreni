@@ -37,6 +37,7 @@
     "lint:docs:rule-examples": "node Makefile.js checkRuleExamples",
     "lint:types": "tsc -p tsconfig.json",
     "lint:unused": "knip",
+    "test:types:packaged": "attw --pack packages/js --profile node16",
     "lint:fix": "node Makefile.js lint -- fix",
     "lint:fix:docs:js": "node Makefile.js lintDocsJS -- fix",
     "release:generate:alpha": "node Makefile.js generatePrerelease -- alpha",
@@ -133,6 +134,7 @@
     "optionator": "^0.9.3"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@babel/core": "^7.4.3",
     "@babel/preset-env": "^7.4.3",
     "@cypress/webpack-preprocessor": "^6.0.2",

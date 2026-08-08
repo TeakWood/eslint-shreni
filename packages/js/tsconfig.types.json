@@ -1,0 +1,39 @@
+{
+  /*
+   * Declaration emit for the published `@eslint/js` tarball.
+   *
+   * The repo-root `tsconfig.types.json` emits into `dist/types/` at the root,
+   * which is outside this package and therefore never packed. Consumers only
+   * see what `packages/js/package.json`'s `files` array ships, so this
+   * package emits its own declarations into its own `dist/`.
+   *
+   * `rootDir` is the package directory rather than `src`, because
+   * `src/index.js` reads `../package.json` and that JSON file is an input to
+   * the program. Output therefore lands at `dist/src/*.d.ts`, which is what
+   * the `types` conditions in `package.json` point at.
+   *
+   * Run with `npm run build:types` (see `target.buildTypes` in Makefile.js).
+   */
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": ".",
+    "outDir": "dist",
+
+    /*
+     * `eslint` is an OPTIONAL peer dependency, so the published
+     * declarations must not depend on anything outside this package.
+     * Emptying `types` drops the ambient `@types/node` the base config
+     * pulls in, so an emit that quietly started leaning on a global fails
+     * here rather than at a consumer who does not have it installed.
+     */
+    "types": []
+  },
+  "files": [
+    "src/index.js",
+    "src/configs/eslint-all.js",
+    "src/configs/eslint-recommended.js"
+  ]
+}

@@ -4,9 +4,18 @@
   "description": "ESLint JavaScript language implementation",
   "funding": "https://eslint.org/donate",
   "main": "./src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "LICENSE",
     "README.md",
+    "dist",
     "src"
   ],
   "publishConfig": {
