@@ -302,6 +302,345 @@ re-derives the resolution facts from the installed tree on every test run and
 fails if a dependency's type availability changes or a new runtime dependency is
 added without being classified here.
 
+## Phase 0 spike — the AST node vocabulary decision
+
+`eslint-shreni-beads-y6r.15`. No annotation work; findings only.
+
+`lib/types/core.d.ts` covers the _results_ half of the vocabulary — `LintMessage`,
+`LintResult`, `Severity`, `Fix`, `Position` — and contains no AST node types at
+all. Every remaining bead in this epic discriminates on AST nodes: the ~94
+exports of `ast-utils.js`, the token-store overload families, the six
+`switch (node.type)` ladders in `code-path-analyzer.js`. No bead owned the
+choice of node vocabulary, and all of them are downstream of it.
+
+**Decision: hand-author the node vocabulary in `lib/types/`** (candidate (b)),
+mirroring `@types/estree`'s shapes closely enough to stay assignable to them at
+the package boundaries, and keep `@types/estree` as an explicit devDependency
+regardless. Candidates (a) and (c) were both measured and both fail.
+
+### Method
+
+Nothing below is read off a README or a `types` field. Three kinds of evidence:
+
+1. **Runtime observation.** espree 11.2.0 was run over source exercising
+   hashbangs, bigints, private fields, static blocks, JSX, and
+   `sourceType: "commonjs"`, and the resulting nodes, comments, and tokens were
+   enumerated by walking the tree.
+2. **Compiler expansion.** `@types/estree`'s `Node["type"]`, `Comment["type"]`,
+   and `Program["sourceType"]` unions were expanded with the TypeScript checker
+   rather than by reading the declaration file, and diffed against espree's own
+   `Syntax` table.
+3. **Compilation against real call-site shapes.** Each candidate vocabulary was
+   compiled at `strict: true` against probes reproducing code that actually
+   exists in `lib/` — `isIdentifierReference`'s switch ladder verbatim,
+   `isDirective`, unconditional `.range`/`.loc`/`.parent` reads. A candidate
+   only survives if the probe compiles, not if the shape looks plausible.
+
+### What espree actually produces
+
+espree's own declarations do not speak estree at all: `dist/espree.d.ts` types
+`parse()` as returning **`acorn.Program`**, and `acorn.Node` is
+`{ start: number; end: number; type: string; range?; loc? }` — an open `type`
+and no node union whatsoever. So "adopt espree's types" is not an available
+option; espree publishes no node vocabulary to adopt. The comparison that
+matters is therefore between what espree _emits at runtime_ and what
+`@types/estree` _declares_.
+
+ESLint pins the parser options that decide most of this. `lib/languages/js/index.js:242-245`
+forces `loc: true`, `range: true`, `tokens: true`, `comment: true` on every
+parse, and `lib/languages/js/source-code/source-code.js:1140` assigns
+`node.parent` during traversal. None of those four guarantees is expressible in
+`@types/estree`.
+
+### Divergences, enumerated
+
+`additive` means espree produces something estree does not describe, and a
+vocabulary can extend estree without contradicting it. `contradictory` means
+estree makes a claim that is wrong for ESLint, so no extension can repair it.
+
+| #   | Divergence                          | ESLint / espree reality                                    | `@types/estree` declares                             | Class         |
+| --- | ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- | ------------- |
+| 1   | `node.range`                        | always present (`range: true` is forced)                   | `range?: [number, number] \| undefined`              | contradictory |
+| 2   | `node.loc`                          | always present (`loc: true` is forced)                     | `loc?: SourceLocation \| null \| undefined`          | contradictory |
+| 3   | `node.parent`                       | assigned to every node during traversal                    | absent                                               | additive      |
+| 4   | `node.start` / `node.end`           | on every node, inherited from acorn                        | absent                                               | additive      |
+| 5   | `Program.tokens`                    | present (`tokens: true` is forced)                         | absent                                               | additive      |
+| 6   | `Program.comments`                  | always present                                             | `comments?: Comment[] \| undefined`                  | contradictory |
+| 7   | JSX and friends                     | 18 extra node types in `espree.Syntax` (89 vs estree's 71) | absent                                               | additive      |
+| 8   | `Comment.type`                      | `"Line" \| "Block" \| "Hashbang"`                          | `"Line" \| "Block"`                                  | contradictory |
+| 9   | `Program.sourceType`                | `"script" \| "module" \| "commonjs"`                       | `"script" \| "module"`                               | contradictory |
+| 10  | TS-ESTree node types                | `ast-utils.js` references 9 of them at 14 sites            | absent                                               | additive      |
+| 11  | `ExpressionStatement` / `Directive` | one runtime shape; `.directive` tested by `isDirective`    | two interfaces sharing `type: "ExpressionStatement"` | contradictory |
+
+On #7, the estree union is a strict _subset_ of espree's: all 71 of estree's
+node types appear in `espree.Syntax`, and espree adds 18 — the 16 `JSX*` types,
+`ImportAttribute`, and the two `Experimental*` spread types.
+
+On #10, this is the divergence the bead did not anticipate and the one that
+decides the shape of the answer. ESLint core is parser-agnostic, and
+`ast-utils.js` handles typescript-eslint's nodes directly:
+`TSPropertySignature` and `TSMethodSignature` (`:311`, `:312`, `:2229-2230`,
+`:2258`, `:2291`, `:2406-2407`), `TSModuleBlock` (`:1308`), `TSDeclareFunction`
+(`:1470`), `TSImportEqualsDeclaration` (`:1471-1472`), and the
+`TS_TYPE_NODE_TYPES` set (`:1415-1419`). Neither espree nor `@types/estree`
+declares any of them.
+
+On #11 — estree splits one runtime shape into `ExpressionStatement` and
+`Directive`, both carrying `type: "ExpressionStatement"`, with `.directive` on
+only the latter. A discriminant that appears on two members cannot separate
+them, so `ast-utils.js:1318`'s `isDirective` is **unnarrowable** under the
+estree union no matter how it is extended.
+
+### Candidate (a) — adopt `@types/estree` directly: rejected
+
+Seven probes reproducing real `lib/` shapes were compiled against
+`estree.Node`. Six failed:
+
+```
+TS18048: 'node.range' is possibly 'undefined'.
+TS2339:  Property 'parent' does not exist on type 'Node'.
+TS18049: 'node.loc' is possibly 'null' or 'undefined'.
+TS2367:  types '...59 more...' and '"JSXElement"' have no overlap.
+TS2367:  types '"Line" | "Block"' and '"Hashbang"' have no overlap.
+TS2322:  Type 'Expression | null | undefined' is not assignable to 'Node | null'.
+```
+
+The only probe that passed was indexing a `Record<string, …>` by `node.type`.
+
+The scale matters more than the count. Across `lib/` there are **791** `.range`
+reads, **573** `.loc` reads, and **985** `.parent` reads. Under candidate (a)
+every one of the first two needs a non-null assertion or a guard, and every one
+of the third is a hard error. In JSDoc that assertion is spelled
+`/** @type {[number, number]} */ (node.range)` — roughly 1,364 casts written to
+work around a declaration that is simply wrong about ESLint. That is precisely
+the "casting to `any`" experience user story 1 exists to eliminate.
+
+### Candidate (c) — an estree hybrid: rejected in all three forms
+
+This was the cheap answer and it was tested hardest. Three forms, all measured.
+
+**(c1) Intersect the union.** `type ESLintNode = ESTree.Node & { parent; range; loc }`.
+Discrimination survives the intersection and the additions are present on the
+node itself — but they **do not reach children**, because estree's interface
+bodies still type their fields with estree's own unions:
+
+```
+TS18048: 'node.test.range' is possibly 'undefined'.
+TS2339:  Property 'parent' does not exist on type 'ModuleDeclaration | Statement | Directive'.
+```
+
+Walking into children is most of what ESLint does, so this fails where it counts.
+
+**(c2) Augment the estree module.** This is the strongest form, and it partly
+works: augmenting `BaseNode` with `parent` _does_ propagate to children, and
+because `NodeMap` is an interface, JSX types _can_ be added to the `Node` union.
+What it cannot do is **change** anything that already exists. Strengthening
+`range` from optional to required, or widening `Comment["type"]` to include
+`"Hashbang"`, is rejected by TS2717 / TS2687.
+
+The decisive part is how that rejection presents. `tsconfig.base.json` sets
+`skipLibCheck: true`, and those diagnostics are reported _in the declaration
+file_ — so under the gate this repo actually ships, a broken augmentation
+produces **no diagnostic at all**. It compiles, it is ignored, and the only
+symptom is that `range` is still optional at the use site. An author would write
+the augmentation, see green, and annotate hundreds of files on a false premise.
+A mechanism whose failure mode is silence is not one to build a vocabulary on.
+
+**(c3) Derive with a recursive mapped type.** The clever option, and the one
+that came closest — `parent`, narrowing, child extras, and estree assignability
+all hold. It fails on three counts. It is still a closed estree union, so
+`node.type === "TSPropertySignature"` remains an error. `isDirective` still
+cannot narrow. And the diagnostics it produces are unreadable — a single
+missing property yields a 400-character structural dump beginning
+`'{ type: "ExpressionStatement"; expression: ({ type: "ClassExpression"; id?: ...`.
+It also quietly corrupts the shapes it copies: `range` comes out as
+`number[] & [number, number]`, because the recursion rewrites the tuple through
+its array branch, so `.push()` is legal on a two-element position pair. Types
+whose errors cannot be read are a worse tool than no types, and user stories 2
+and 3 are entirely about what a consumer sees on hover.
+
+### Candidate (b) — hand-authored: adopted
+
+Cost, stated honestly: roughly 89 node interfaces plus the supporting unions,
+mirroring estree's shapes. It is the most typing of the three options. It is
+also the only one that is correct on all eleven divergences, and the cost is
+mechanical, one-time, and paid in a single file.
+
+Two properties were verified rather than assumed.
+
+**Interop holds.** Hand-authored nodes are structurally assignable to
+`estree.Node` and pass through real `@eslint-community/eslint-utils` signatures
+— but only while the shapes mirror estree's own unions. The probe initially
+failed because a single `Literal` interface is not assignable to estree's
+three-way `SimpleLiteral | RegExpLiteral | BigIntLiteral` split. Mirroring that
+split fixes it. This is a real constraint on the authoring, not a formality, and
+it is guarded by a test.
+
+**The additions reach children**, which is exactly what (c1) could not do:
+`node.expression.range[0]` and `node.expression.parent.range[1]` both compile,
+because our own interfaces type their fields with our own unions.
+
+### The `node.type` discrimination strategy
+
+Concretely, so that `y6r.3` can author against it without re-deciding:
+
+1. **A base interface carrying ESLint's guarantees.** `range: [number, number]`
+   and `loc: SourceLocation` **required** (not optional — this is divergence
+   #1/#2 and the whole reason estree does not fit), plus `parent: Node`. Reuse
+   `SourceRange`, `Position`, and `SourceLocation` already exported from
+   `core.d.ts`; do not re-declare them.
+2. **One interface per node type, each with a string-literal `type`.** The 71
+   estree types plus espree's 18 extras.
+3. **The union is closed**, and third-party node types are declared as
+   first-class members rather than accommodated by an escape hatch. The obvious
+   alternative — an `UnknownNode { type: string }` member — was tested and
+   **destroys narrowing on every other member**: `node.type === "Identifier"`
+   narrows to `Identifier | UnknownNode` and `node.name` becomes an error. Since
+   ESLint core references exactly 9 TS-ESTree names, declare those 9 minimally
+   (`key`, `computed`, `static`, `kind` — only the fields `ast-utils.js` reads)
+   and keep the union closed.
+4. **`Comment` and `Token` are separate from `Node`.** `Comment["type"]` is
+   `"Line" | "Block" | "Hashbang"`; tokens carry their own discriminant
+   (`"Keyword"`, `"Identifier"`, `"Punctuator"`, `"Numeric"`, `"String"`,
+   `"PrivateIdentifier"`, …). `ast-utils.js` has 28 single-argument _token_
+   predicates against 22 strict node predicates, so this is not a minor
+   sub-vocabulary.
+5. **`Directive` is not a separate interface.** Give `ExpressionStatement` an
+   optional `directive?: string` — one interface, one discriminant — which is
+   what makes `isDirective` narrow.
+
+The adopted shape was compiled with all five properties exercised and is clean;
+the probe lives in `tests/lib/types/ast-vocabulary.js` so it stays that way.
+
+### Validated against the real consumers
+
+**`ast-utils.js`** — 94 exports, of which 22 are strict `(node) => boolean`
+predicates, 28 are token predicates, and 18 are multi-argument. Beyond the
+`.parent`/`.range`/`.loc` counts above, three patterns constrain the vocabulary:
+
+- **Literal narrowing.** `isNullLiteral` (`:192`), `getStaticStringValue`
+  (`:247`), `isNumericLiteral` (`:2600`) and `equalLiteralValue` (`:407`) all
+  read `.regex` and `.bigint` after `type === "Literal"`. estree's three-way
+  split makes each of those an error on the members that lack the field. Our
+  vocabulary must mirror the split for interop (above) _and_ these sites need
+  real narrowing — this is the single largest annotation cost in the file, and
+  `y6r.6` should budget for it rather than discover it.
+- **Guard/access mismatch.** `getFunctionNameWithKind` (`:2222-2296`) guards on
+  a disjunction across **two different variables** (`parent.type === … || node.type === …`),
+  so entering the block narrows neither. Four escape hatches or a restructure;
+  either way it is not a mechanical annotation.
+- **Open-string treatment of `type`.** `node.type in eslintVisitorKeys`
+  (`:2042`), five regex tests against `.type` (`:131`, `:149`, `:165`, `:871`,
+  `:1652`), six `Set<string>.has(node.type)` calls, and
+  `switch (node && node.type)` (`:304`) whose discriminant is
+  `Node["type"] | undefined | null` and therefore narrows nothing. A closed
+  literal union does not break these — they keep working — but it also does not
+  _help_ them, so they will need explicit predicates to recover narrowing.
+  `STATEMENT_LIST_PARENTS` (`:48`) is an exported `Set<string>` that ~193
+  downstream consumers test `node.type` against.
+
+**`code-path-analyzer.js`** — six `switch` ladders, not the two the bead
+assumed: `:88`, `:134`, `:260`, `:437`, `:544`, `:688`. Every case label is a
+real ESTree node type; none is synthetic. The `default:` arms never dereference
+a node, so the residual type is never a problem. Compiling the `:134` ladder
+verbatim against a discriminated union produces exactly three errors, all in
+shared case bodies:
+
+```
+TS2339: Property 'id' does not exist on type 'ClassDeclaration | ClassExpression | ArrowFunctionExpression | …'.
+TS2339: Property 'shorthand' does not exist on type 'AssignmentProperty | Property | MethodDefinition | PropertyDefinition'.
+TS2339: Property 'key' does not exist on type 'AssignmentPattern'.
+```
+
+These arise under _any_ discriminated union, hand-authored or estree, so they
+are a cost of the strategy rather than an argument between candidates. The first
+two are benign — `undefined` is falsy and the expressions reduce correctly — and
+want a documented widening. The third is not; see below.
+
+**`code-path-state.js`** — worth recording because it changes the bead's
+premise: it **never touches an AST node**. Its entire contact surface is the
+`type` and `label` _strings_ the analyzer passes in. Its internal contexts are
+ES classes, and `LoopContext`'s discriminant field is literally named `type`
+with values drawn from the AST type names (`"WhileStatement"`,
+`"ForInStatement"`, …). A `Node | LoopContext` union discriminated on `type`
+would be genuinely ambiguous, so `y6r.13` must keep those vocabularies apart —
+and note that `LoopContextBase` assigns `this.type` from an unannotated
+parameter, so it infers as `string` and the `switch` at `:1790` narrows nothing
+until literal types are declared.
+
+### A latent defect this surfaced
+
+`code-path-analyzer.js:159-160`:
+
+```js
+case "AssignmentPattern":
+    return parent.key !== node;
+```
+
+`AssignmentPattern` has `left` and `right`; it has no `key`. The expression is
+therefore `undefined !== node`, always `true` — identical to the `default:` arm
+two lines below, making the case dead code that reads as though it does
+something. The evident intent was `parent.left !== node`, which would classify a
+default-parameter binding identifier as _not_ a reference. As written,
+`isIdentifierReference` returns `true` there, so
+`makeFirstThrowablePathInTryOrCatchBlock` adds a throwable path edge for
+binding identifiers that cannot throw.
+
+This is upstream ESLint code and the fix is a behaviour change, so it is **not**
+made here — this bead is findings-only. It should be filed separately and
+handled before `y6r.12` annotates the file, because a discriminated union
+rejects the line outright and the temptation will be to silence it with a cast
+rather than fix it.
+
+### `@types/estree` stays an explicit devDependency
+
+Independent of this decision. `eslint-scope/lib/index.d.cts:33` does
+`import type * as ESTree from "estree"`, and
+`@eslint-community/eslint-utils`'s `index.d.ts` aliases sixteen estree types
+into its own public signatures. Both are runtime dependencies, so the compiler
+needs `@types/estree` to type anything that touches a scope or a util —
+regardless of what ESLint's own node vocabulary looks like. `@types/esquery`
+would add a third such boundary if adopted.
+
+This is what the y6r.1 audit meant by "a design decision, not a free win": the
+question was never whether `@types/estree` is present, but whether it is
+ESLint's _vocabulary_. It is present, and it is not the vocabulary.
+
+### Consistency with not adopting `@eslint/core`
+
+The two decisions are the same decision, reached the same way, and it is worth
+being explicit that this is not a coincidence.
+
+`@eslint/core` was rejected so the declaration pipeline has no external
+dependency that can change shape underneath it. Adopting `@types/estree` as the
+node vocabulary would have reintroduced exactly that coupling in the larger
+half of the surface — and worse, against a package that is DefinitelyTyped
+(`nonNpm: true`), versioned independently of any implementation, and
+demonstrably wrong about ESLint on six counts.
+
+The distinction the epic draws is between **depending on a package's types at a
+boundary** and **speaking its vocabulary internally**. ESLint does the former
+for `@eslint/config-array`, `@eslint/plugin-kit`, `eslint-scope`, and
+`eslint-utils`, and will keep doing it — our node types are deliberately
+authored to stay assignable at those boundaries. It does not do the latter for
+`@eslint/core`, and after this spike it does not do it for `@types/estree`
+either.
+
+### Follow-up work this spike implies
+
+1. `y6r.14` can now give `esutils.ast.trailingStatement` a real return type: the
+   node union from this vocabulary, or `null`.
+2. `y6r.3` authors the node vocabulary per the discrimination strategy above.
+   It is large enough to be worth splitting from the rule/config half.
+3. File the `AssignmentPattern` defect in `code-path-analyzer.js` separately.
+4. `y6r.6` should budget explicitly for the `Literal` three-way split and for
+   `getFunctionNameWithKind`'s cross-variable guard; neither is mechanical.
+
+The decision is guarded by `tests/lib/types/ast-vocabulary.js`, which re-derives
+every divergence from the installed espree and `@types/estree` on each run,
+recompiles the rejected candidates to confirm they still fail for the recorded
+reasons, and recompiles the adopted shape to confirm it still holds.
+
 ## The type-check gate
 
 `npm run lint:types` (`tsc -p tsconfig.json`) type-checks the allowlist under
