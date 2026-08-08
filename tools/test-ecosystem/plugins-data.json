@@ -45,15 +45,10 @@
   },
   "eslint-plugin-unicorn": {
     "commands": {
-      "install": [
-        "npm",
-        "install",
-        "--save-dev",
-        "eslint-plugin-eslint-plugin@7.5.0"
-      ],
+      "install": ["npm", "install", "core-js-compat@3.49.0"],
       "test": ["npm", "run", "test"]
     },
-    "commit": "a33b1c1e207b37f5c6f4ea8f3e66dad9a9d1ad43",
+    "commit": "dd52b4a41a344a36a6970994867e934128b57f03",
     "repository": "https://github.com/sindresorhus/eslint-plugin-unicorn"
   },
   "eslint-plugin-vue": {

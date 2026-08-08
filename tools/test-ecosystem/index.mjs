@@ -13,6 +13,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { styleText } from "node:util";
 
+import { describeCommandFailure } from "./command-failure.mjs";
 import { getPlugins } from "./data.mjs";
 
 const log = debug("test:ecosystem");
@@ -46,7 +47,9 @@ async function runTests(pluginKey, pluginSettings) {
 
 	/**
 	 * Attempts to run a command in the plugin sandbox directory.
-	 * If it fails, any error stdout will be logged in red before a (re-)thrown error.
+	 * If it fails, the tail of everything it printed is included in the thrown
+	 * error, because the failing command is usually a test runner that reports
+	 * on stdout.
 	 * @param command
 	 * @param args
 	 */
@@ -61,8 +64,10 @@ async function runTests(pluginKey, pluginSettings) {
 			maxBuffer: 100 * 1024 * 1024,
 		});
 
-		if (result.status || result.error) {
-			throw result.error ?? new Error(result.stderr?.toString());
+		const failure = describeCommandFailure([command, ...args], result);
+
+		if (failure) {
+			throw new Error(failure);
 		}
 
 		return result;
