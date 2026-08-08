@@ -3,7 +3,21 @@
   "workspaces": {
     ".": {
       // These entries are complementary to the ones found in package.json
-      "entry": ["lib/rules/index.js", "tools/internal-rules/*.js"],
+      // `lib/eslint/worker.js` is a worker-thread entry point. It is loaded
+      // only dynamically, via `pathToFileURL` at `lib/eslint/eslint.js`, which
+      // Knip cannot follow. Upstream it stayed reachable through a static
+      // `@import { WorkerLintResults } from "./worker.js"` JSDoc tag that the
+      // baseline type strip removed.
+      //
+      // STOPGAP: delete this entry when `lib/eslint/eslint.js` is annotated in
+      // phase 3+ and that `@import` tag returns, then confirm `knip` still
+      // exits 0. Left in place, it masks `worker.js` from Knip forever. See
+      // `.shreni/design/typescript-types-from-jsdoc.md`.
+      "entry": [
+        "lib/rules/index.js",
+        "tools/internal-rules/*.js",
+        "lib/eslint/worker.js",
+      ],
       "project": ["{bin,conf,lib,tools}/**/*.js"],
       "mocha": {
         "entry": [
@@ -41,8 +55,6 @@
       "entry": ["src/assets/scss/{styles,print}.scss"],
       "ignore": ["src/assets/js/search.js", "_examples/**"],
     },
-    "packages/js": {
-      "ignoreDependencies": ["eslint"],
-    },
+    "packages/js": {},
   },
 }

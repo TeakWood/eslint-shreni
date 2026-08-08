@@ -55,5 +55,29 @@
 
     // packages/js/
     "packages/js/src/index.js"
-  ]
+  ],
+
+  /*
+   * Read by ts-node only; `tsc` ignores this top-level key entirely. It has
+   * nothing to do with the gate above.
+   *
+   * Cypress loads `cypress.config.js` through its bundled ts-node but using
+   * THIS project's TypeScript, and hard-codes `moduleResolution: "node"`
+   * (node10). ts-node hooks `.js` files because this config tree sets
+   * `allowJs`. Under TypeScript 6 that injected node10 is a hard error
+   * (TS5107), and Cypress dies loading its config before a single spec runs.
+   *
+   * Keep the silencing scoped here. Putting `ignoreDeprecations` into
+   * `compilerOptions` — in this file or in `tsconfig.base.json` — also makes
+   * Cypress load and also leaves `tsc` at exit 0, but it would stop the real
+   * type-check gate from reporting TypeScript deprecations, which is the one
+   * thing in this repo that must keep shouting about them.
+   *
+   * `tests/lib/types/ci-config.js` pins both halves.
+   */
+  "ts-node": {
+    "compilerOptions": {
+      "ignoreDeprecations": "6.0"
+    }
+  }
 }

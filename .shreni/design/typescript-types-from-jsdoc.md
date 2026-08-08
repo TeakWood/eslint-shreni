@@ -940,3 +940,90 @@ extension-less `tsc` is a POSIX shell script `CreateProcess` cannot execute:
 nothing in it. Choosing `tsc.cmd` on `win32` instead would work but requires
 `shell: true`, which is worse. `tests/lib/types/types.js` pins the entry-point
 form.
+
+## What this work cost CI, and the two debts it left
+
+`eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the
+three failing jobs trace back to this epic's own footprint — one to the baseline
+type strip that preceded it, one to the root `tsconfig.json` it introduced —
+and both are held closed by configuration rather than by code. Each carries an
+obligation a later phase has to discharge.
+
+### `lib/eslint/worker.js` is a Knip entry point — a STOPGAP, delete it in phase 3+
+
+`worker.js` is loaded only dynamically, through `pathToFileURL` at
+`lib/eslint/eslint.js:450`, which Knip cannot follow. Upstream it stayed
+reachable through a **static** JSDoc tag at `lib/eslint/eslint.js:67`:
+
+```js
+ * @import { WorkerLintResults } from "./worker.js";
+```
+
+Commit `6386c7b42` ("Remove types from project for baseline") stripped every
+`@import`/`@typedef` repo-wide and deleted that last static reference, so
+`npm run lint:unused` has reported `Unused files (1) lib/eslint/worker.js` and
+exited 1 on every run since. This is inherited from the strip, not caused by any
+annotation bead.
+
+The file is declared in the `"."` workspace's **`entry`** array in `knip.jsonc`,
+not in `ignore`. `entry` states the truth — it genuinely is a worker-thread
+entry point — where `ignore` would merely silence the report and would also
+suppress any real future finding inside the file.
+
+> **Obligation.** The correct long-term fix is the `@import` tag coming back
+> when `lib/eslint/` is annotated. `lib/eslint/eslint.js` is outside the
+> phases 0–2 scope of `eslint-shreni-beads-y6r`, which is why this could not
+> simply be waited out — the job would have stayed red for the rest of that
+> epic. **The phase 3+ bead that annotates `lib/eslint/eslint.js` must delete
+> the `lib/eslint/worker.js` entry from `knip.jsonc` and confirm `knip` still
+> exits 0.** Left in place past that point it masks `worker.js` from Knip
+> permanently: if the file later becomes genuinely orphaned, or its real entry
+> points change, nothing reports it.
+
+### `ignoreDeprecations` is scoped to `ts-node`, and must stay that way
+
+Cypress loads `cypress.config.js` through its **bundled ts-node** but using
+**this project's TypeScript**, and hard-codes
+`compilerOptions: { module: "commonjs", moduleResolution: "node" }`. ts-node
+only hooks `.js` files when `allowJs` is on — which it became the moment this
+fork added a root `tsconfig.json` extending `tsconfig.base.json`. Under
+TypeScript 6 that injected `node10` is a hard error:
+
+```text
+error TS5107: Option 'moduleResolution=node10' is deprecated and will stop
+functioning in TypeScript 7.0.
+```
+
+Cypress dies loading its config file, before a single spec runs. The webpack
+build succeeds and no `.d.ts` reaches the bundle — nothing about `lib/types/` or
+the `@types` devDependencies is involved. The tell is one line above the error:
+upstream's green log prints `Couldn't find tsconfig.json`, ours prints
+`Missing baseUrl in compilerOptions`, i.e. it found one. So this was introduced
+by commit `186ce5981`, and the root `tsconfig.json` is load-bearing and
+permanent — it will not resolve itself.
+
+The fix is a top-level `"ts-node"` key in `tsconfig.json`. ts-node reads that
+key; `tsc` ignores it entirely.
+
+> **Keep the silencing where it is.** Putting `ignoreDeprecations` into
+> `compilerOptions` — in `tsconfig.json` or, worse, `tsconfig.base.json` — also
+> makes Cypress load, and also leaves `tsc` at exit 0. It would also silence
+> deprecation errors for the **real type-check gate**, which is the one thing in
+> this repo that must keep shouting when TypeScript deprecates something.
+> Confine it to the ts-node consumer that needs it.
+
+Do not "fix" this instead by removing or renaming the root `tsconfig.json` to
+restore upstream's layout. That reaches `package.json` (`lint:types`),
+`Makefile.js`, `tsconfig.types.json`, `tests/lib/types/types.js`,
+`tests/lib/types/include-traversal.js` and the CI workflow comments — a large
+structural change to undo a one-line configuration gap.
+
+### Demonstrated, not asserted
+
+`tests/lib/types/ci-config.js` pins both. The ts-node half does not take
+ts-node's merge semantics on trust: it replicates them against the real
+compiler — resolving the shipped `tsconfig.json`, overlaying the
+`moduleResolution: "node"` Cypress injects, and reading
+`program.getOptionsDiagnostics()`. **TS5107 is present without the `ts-node`
+key's compiler options and absent with them**, so deleting the key fails the
+suite rather than quietly re-breaking Browser Test.
