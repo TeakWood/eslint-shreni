@@ -1090,6 +1090,45 @@ phases 0-2 entirely. When that file is converted, the constant, the fixture in
 `tests/fixtures/types/allowlist-growth/` and the two assertions naming it all
 move together.
 
+### Deriving a node type instead of restating one
+
+`lib/rules/utils/fix-tracker.js` needs the same node view `ast-utils.js`
+invented, because `retainEnclosingFunction` passes its argument straight to
+`getUpperFunction`. It does not restate it. It derives it:
+
+```js
+/** @typedef {Parameters<typeof astUtils.getUpperFunction>[0]} Node */
+```
+
+A second `ASTNode & NodeMembers` typedef would have been shorter to read and
+would have drifted the moment either file was edited. More importantly, the
+derived form **retires itself**: when the closed union lands and `ast-utils.js`
+drops its widening, this typedef silently becomes `ASTNode` and nothing has to
+be found and deleted. `tests/lib/types/rules-utils-remainder.js` pins the
+coupling from the other side — one test asserts `ast-utils.js` still widens, and
+fails with the follow-up written into its message when it stops.
+
+**Prefer deriving a type from the module that owns it over restating it**
+wherever one annotated file consumes another's interim vocabulary.
+
+### The `__proto__: null` widening is a recurring shape, not a one-off
+
+`char-source.js` has the same prototype-less dispatch table as
+`needsPrecedingSemicolon` in `ast-utils.js`, and it needs the same two-step
+widening through `unknown` for the same reason — the inferred type carries a
+`__proto__` property typed `null`, which no `Record<...>` assertion accepts
+directly.
+
+Two things about it are worth carrying to the next table:
+
+- **Annotating the declaration does not work.** `@type {{[k: string]: string}}`
+  on the object literal makes the `__proto__: null` member itself an error
+  (`null` is not a `string`). The widening has to sit at the read site.
+- **The value type is `string | undefined`, not `string`.** Every one of these
+  tables is read by code that tests the result for truthiness and falls through
+  on a miss. Typing the lookup `string` makes that guard read as dead code to
+  the next person who edits it.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the

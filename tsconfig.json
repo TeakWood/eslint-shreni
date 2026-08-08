@@ -53,10 +53,17 @@
 
     // lib/rules/utils/
     "lib/rules/utils/ast-utils.js",
+    "lib/rules/utils/char-source.js",
     "lib/rules/utils/code-path-utils.js",
+    "lib/rules/utils/fix-tracker.js",
     "lib/rules/utils/keywords.js",
     "lib/rules/utils/lazy-loading-rule-map.js",
     "lib/rules/utils/regular-expressions.js",
+    "lib/rules/utils/unicode/index.js",
+    "lib/rules/utils/unicode/is-combining-character.js",
+    "lib/rules/utils/unicode/is-emoji-modifier.js",
+    "lib/rules/utils/unicode/is-regional-indicator-symbol.js",
+    "lib/rules/utils/unicode/is-surrogate-pair.js",
 
     // packages/js/
     "packages/js/src/index.js"
