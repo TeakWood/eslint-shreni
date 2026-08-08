@@ -723,3 +723,78 @@ reverted by accident.
 `knip.jsonc`'s `ignoreDependencies` because nothing `require()`s it — it is
 consumed by the compiler, through `eslint-scope`'s own declarations, which Knip
 cannot see.
+
+## The rule / config half of `core.d.ts`
+
+`eslint-shreni-beads-y6r.3`. PR #1 landed the _results_ half — `LintMessage`,
+`LintResult`, `Severity`, `Fix`, the position types. This adds the half that
+everything downstream of `lib/shared` actually needs: `RuleDefinition`,
+`RuleContext`, `RuleFixer`, `ReportDescriptor`, `SourceCode`, `Language`,
+`LanguageOptions`, `Parser`, `Processor`, `Config`, the config-array entry
+shapes, and the formatter contract. Nothing is copied from upstream ESLint or
+from `@eslint/core`; every shape names the file and line it was read off.
+
+### The AST seam
+
+The node union decided by the y6r.15 spike is roughly 89 interfaces, and that
+spike explicitly recommended splitting it out of this bead. It is not authored
+here. What is authored is the union's agreed **base** — `ASTNode`, carrying
+`type`, a required `range`, a required `loc`, and `parent` — so the rule and
+config vocabulary can name nodes without inventing a second, inconsistent shape.
+`Program`, `Comment` and `Token` are declared in full, because they are small,
+fully specified by the spike, and load-bearing for `SourceCode`'s surface.
+
+`ASTNode.type` is a bare `string`, which the spike warns against for a union
+_member_. That warning does not apply to a single interim type: it is about a
+fallback member alongside literal-typed siblings, which collapses narrowing on
+all of them. When the union lands, `ASTNode` becomes that union and every
+reference written here keeps working unchanged.
+
+### Boundaries we speak someone else's types at
+
+`ScopeManager`, `Scope`, `Variable`, `Reference` (from `eslint-scope`) and
+`Directive` / `TraversalStep` (from `@eslint/plugin-kit`) are inline
+`import(...)` aliases rather than re-declarations. Both packages are runtime
+dependencies that ship types, and the epic's stated position is that ESLint
+depends on a package's types _at a boundary_ while owning its vocabulary
+internally. Re-declaring them would be exactly the "second, inconsistent
+vocabulary" the spike warns against.
+
+This was verified, not assumed: the declaration-emit gate recompiles `core.d.ts`
+standalone with `types: []` and `skipLibCheck: false`, which is the harshest
+environment in the repo, and both aliases resolve clean there.
+
+### `Omit` over an index-signature type silently destroys it
+
+`Config` is the resolved form of `ConfigObject`, so writing it as
+`interface Config extends Omit<ConfigObject, "language" | …>` is the obvious
+move. It is wrong. `ConfigObject` carries `[key: string]: unknown` — it must, or
+it is not assignable at the `@eslint/config-array` boundary, and it matches what
+`config.js:450` does with unrecognised keys. That makes `keyof ConfigObject`
+equal to `string | number`, so `Exclude` removes nothing and `Omit` collapses the
+result to bare index signatures. `config.name` comes out as `unknown` rather than
+`string | undefined`, with no diagnostic anywhere.
+
+Measured with the compiler, not reasoned about. `Config`'s carried-over members
+are therefore spelled out, and `tests/lib/types/core-vocabulary.js` pins the
+property types so reintroducing the `Omit` fails loudly.
+
+### Why this needs its own test suite
+
+`npm run lint:types` cannot validate any of this. The gate is a `files`
+allowlist, and not one of the modules these types describe — `linter.js`,
+`config.js`, `source-code.js`, `rule-fixer.js` — is in it yet. A vocabulary
+authored ahead of its consumers compiles clean by construction, so a green `tsc`
+says nothing about whether the shapes are right. This is the same structural gap
+`tests/lib/types/vendor.js` closes for the ambient declarations, and it recurs
+for every type authored before the code it describes.
+
+`tests/lib/types/core-vocabulary.js` closes it two ways. Compile probes, every
+positive one paired with a negative, because a declaration widened to `any`
+passes positives just as happily. And re-derivation: `RuleFixer`'s method list is
+recomputed from `rule-fixer.js`'s class body, `LinterOptions`' keys from
+`flatConfigSchema.linterOptions.schema`, `SourceType`'s values by running the
+real `validateLanguageOptions`, `TokenType` against tokens espree actually emits,
+and `CommentType`'s shebang value from the rewrite in `source-code.js`. Those
+five claims fail here the day the implementation moves, rather than being
+believed.
