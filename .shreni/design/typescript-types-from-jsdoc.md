@@ -722,7 +722,8 @@ reverted by accident.
 `devDependencies`, closing the gap recorded above. `@types/estree` is in
 `knip.jsonc`'s `ignoreDependencies` because nothing `require()`s it — it is
 consumed by the compiler, through `eslint-scope`'s own declarations, which Knip
-cannot see.
+cannot see. The remaining six `needs-@types` packages followed; see
+[The `@types` packages the gate depends on](#the-types-packages-the-gate-depends-on).
 
 ## The rule / config half of `core.d.ts`
 
@@ -798,3 +799,89 @@ real `validateLanguageOptions`, `TokenType` against tokens espree actually emits
 and `CommentType`'s shebang value from the rewrite in `source-code.js`. Those
 five claims fail here the day the implementation moves, rather than being
 believed.
+
+## The `@types` packages the gate depends on
+
+`eslint-shreni-beads-y6r.16`. The audit's follow-up item 2 — declare the
+`needs-@types` bucket — is now done. Six DefinitelyTyped packages join the three
+declared with the gate itself:
+
+| Package                                              | Types                                         | Consumed at                                                                                                              |
+| ---------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `@types/cross-spawn@6.0.6`                           | `cross-spawn@7.0.6`                           | `lib/shared/runtime-info.js:53`, `lib/cli.js:268`, `bin/eslint.js:72`                                                    |
+| `@types/esquery@1.5.4`                               | `esquery@1.7.0`                               | `lib/linter/esquery.js:253,309`                                                                                          |
+| `@types/glob-parent@5.1.3`                           | `glob-parent@6.0.2`                           | `lib/eslint/eslint-helpers.js:589`                                                                                       |
+| `@types/is-glob@4.0.4`                               | `is-glob@4.0.3`                               | `lib/eslint/eslint-helpers.js:174`                                                                                       |
+| `@types/json-stable-stringify-without-jsonify@1.0.2` | `json-stable-stringify-without-jsonify@1.0.1` | `lib/cli-engine/lint-result-cache.js:54`, `lib/rule-tester/rule-tester.js:22`, `lib/services/suppressions-service.js:15` |
+| `@types/natural-compare@1.4.3`                       | `natural-compare@1.4.0`                       | `lib/rules/sort-keys.js:55,58`                                                                                           |
+
+`@types/imurmurhash` is deliberately absent: `imurmurhash` is answered today by a
+hand-written block in `lib/types/vendor.d.ts`, and swapping the two is
+`y6r.17`'s job. No runtime dependency changed — every package above is
+compile-time only.
+
+DefinitelyTyped versions its packages against a major rather than a patch, so
+most of the version gaps in that table are cosmetic. Two are real major-version
+skews and were probed rather than waved through:
+
+- **`@types/cross-spawn@6` against `cross-spawn@7`.** Correct anyway, because
+  the consumed surface is only `sync`, which the DT package types as
+  `typeof child_process.spawnSync`. The probe pins the `encoding: "utf8"`
+  overload specifically, since that is what makes `stdout` a `string` rather
+  than a `Buffer` at `runtime-info.js:53`.
+- **`@types/glob-parent@5` against `glob-parent@6`.** The consumed surface is
+  the single call `globParent(pattern)`, whose signature is unchanged across
+  that major.
+
+### `@types/esquery` speaks estree, and that is consistent
+
+`@types/esquery` types every node as `estree.Node`. Adopting it therefore adds a
+third boundary at which ESLint speaks the estree vocabulary, alongside
+`eslint-scope` and `@eslint-community/eslint-utils`.
+
+That is exactly the distinction the AST vocabulary spike drew and it does not
+re-open it: ESLint depends on estree's types **at boundaries** and does not
+speak estree **internally**. `lib/linter/esquery.js` is a boundary — a thin
+wrapper over someone else's matcher — so this is the former. What it must not
+become is a reason to describe ESLint's own nodes in estree terms; the node
+vocabulary is hand-authored in `lib/types/core.d.ts` and stays that way.
+
+`y6r.9`, which annotates `lib/linter/esquery.js`, is where that seam gets
+written. Expect a documented widening there rather than a fight: our node types
+are authored to stay assignable at estree boundaries, and
+`tests/lib/types/ast-vocabulary.js` pins that they do.
+
+### Knip needed nothing, and that was checked in both directions
+
+`@types/estree` required a `knip.jsonc` `ignoreDependencies` entry because
+nothing in the repository depends on a package called `estree` — Knip saw an
+unused devDependency and was right to.
+
+None of these six needs one. Knip resolves `@types/x` through `x`, and all six
+runtime counterparts are declared dependencies with live `require()` sites, so
+each `@types` package is attributed to a used dependency. Verified rather than
+assumed: `npx knip` before and after this change reports the identical two
+findings (`lib/eslint/worker.js` unused, and the `packages/js` `eslint` hint),
+and adding a redundant ignore entry would have been silently wrong in the other
+direction — Knip reports unnecessary ignores as configuration hints.
+
+### The gate cannot check any of this yet
+
+Not one of these six has a consumer in the `tsconfig.json` allowlist —
+`runtime-info.js`, `esquery.js`, `eslint-helpers.js`, `lint-result-cache.js` and
+`sort-keys.js` are all converted by later beads. So `npm run lint:types` compiles
+without ever resolving a single one of them, and a green gate says nothing.
+
+This is the same structural gap `tests/lib/types/vendor.js` closes for the
+ambient declarations, and it is closed the same way.
+`tests/lib/types/declared-types-packages.js` compiles a probe per package that
+mirrors the real call site, pairs each with a negative probe asserting a specific
+error code (so a package resolving to `any` fails rather than passing), and pins
+the installed version against the one the y6r.1 audit actually verified.
+
+It also guards the bucket as a whole rather than just the six: every
+`needs-@types` row in the verdict table above must be answered by a `@types`
+devDependency **or** by a `declare module` block in `lib/types/vendor.d.ts`, and
+never by both. Adding a new `needs-@types` dependency fails that test, and so
+does half of the `y6r.17` swap — deleting the `imurmurhash` ambient without
+declaring `@types/imurmurhash`, or declaring it without deleting the ambient.
