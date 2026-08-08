@@ -1000,6 +1000,96 @@ added to the vocabulary, because the CLI and `lib/eslint/` are annotated in
 phase 3+ and that is where those types belong. Each carries a comment saying so.
 When those phases land, **move** them — do not leave a second copy behind.
 
+### Annotating `ast-utils.js` before the node union exists
+
+`lib/rules/utils/ast-utils.js` has 193 inbound edges and ~94 exports, most of
+them predicates over AST nodes — and the node union those predicates want does
+not exist yet. `core.d.ts` carries only the union's agreed base (see "The AST
+seam" above): `type` is a bare `string`, and there are no per-node members at
+all. Annotating every signature as `ASTNode` and stopping there produces roughly
+a thousand `TS2339`s, one per `node.callee` / `node.quasis` / `node.operator`.
+
+What shipped instead is a **single file-local widening**, and it is worth
+copying rather than reinventing when the same wall is hit in
+`code-path-analyzer.js` or the token store:
+
+```js
+/** @typedef {ASTNode & NodeMembers} Node */
+```
+
+`NodeMembers` declares the ~35 members this module actually reads. Every
+exported signature still names an `ASTNode` — the widening is a view over the
+vocabulary, deliberately not a second vocabulary — and it buys no narrowing,
+because `type` is still a `string`. It costs 51 annotations and 45 assertions
+across 2,962 lines, and its retirement is one delete: when the union lands,
+drop `Node` and `NodeMembers` and replace every `Node` with `ASTNode`.
+
+Three decisions inside it are the interesting part.
+
+**Members are non-optional.** The union will make each member present exactly
+on the node kinds that have it. An interim view that cannot discriminate has
+only two options: offer them unconditionally, or make all 35 `| undefined`. The
+second buys no safety — it moves the assertion to every read instead of
+concentrating it in one typedef. Nullability the runtime expresses through a
+member's _value_ (`id`, `test`, `init`, `alternate`, `elements`, `options`) is
+kept, because the code already branches on it.
+
+**`parent` is declared non-`null`, and that is the one overstatement.**
+`ASTNode` declares it `ASTNode | null`; the intersection narrows it to `Node`.
+`Program.parent` really is `null`, so this is a claim the runtime does not
+support. It is made because the alternative is ~40 non-null assertions at sites
+that all read `parent` off a node the caller already knows is not the root. The
+two walks that _do_ reach the root — `getUpperFunction` and
+`isStartOfExpressionStatement` — still test it at runtime, and **those guards
+are load-bearing**: nothing stops a later reader from deleting them because the
+type says they cannot fire.
+
+**`body` is the one member the widening cannot collapse.** It is a statement
+list on `Program` and `BlockStatement` and a single node on every function and
+loop, so it is declared `Node | Node[]` and six call sites assert which they
+have. That is the honest shape; an `Node[] & Node` intersection would have made
+all six compile and would have said something false about every one of them.
+
+The `__proto__: null` lookup table at `needsPrecedingSemicolon` needs its own
+assertion, and it needs to go through `unknown`: its inferred type carries a
+`__proto__` property typed `null`, so a direct assertion to
+`Record<string, string>` is rejected.
+
+`tests/lib/types/rules-ast-utils.js` carries the probes. Two of them outlive the
+bead: one walks all 94 exports through the type checker and fails if any
+parameter or return type is `any` — the gate cannot see that, because an
+implicit `any` type-checks clean forever — and one fails the day `ASTNode.type`
+stops being a bare `string`, telling the reader to retire the widening.
+
+### Declaration emit reaches files the allowlist never named
+
+Adding `ast-utils.js` to the allowlist pulled `conf/globals.js` into the program
+and therefore into `npm run build:types`. Its tables are plain object literals,
+so declaration emit turned each one into an `export namespace` with one `let`
+per global — including `let eval`, which is a syntax error in a module (TS1215),
+because modules are automatically strict. `tsc --noEmit` never sees it; only
+`tests/lib/types/types.js`, which recompiles the emitted declarations, does.
+
+The fix is one `@type {Record<string, boolean>}` per table. No pragma and no
+allowlist entry: JSDoc types are read regardless of `checkJs`, so annotating a
+file is enough to fix its emit without converting it.
+
+**The transferable rule: an allowlist entry drags its whole `require` subtree
+into declaration emit.** Any un-annotated JS file in that subtree whose inferred
+shape emits invalid syntax will fail the emit suite, and the error will name a
+file nobody touched.
+
+### The traversal demonstration moves when its subject is converted
+
+`tests/lib/types/include-traversal.js` demonstrates the include-vs-traversal
+trap against a real un-annotated file, and asserts that its subject still lacks
+a `// @ts-check` pragma so the demonstration cannot silently become vacuous.
+That guard fired on this bead: its subject _was_ `ast-utils.js`. It now points
+at `lib/rules/no-unused-vars.js`, which is in `lib/rules/` and therefore outside
+phases 0-2 entirely. When that file is converted, the constant, the fixture in
+`tests/fixtures/types/allowlist-growth/` and the two assertions naming it all
+move together.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the

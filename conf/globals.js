@@ -9,6 +9,16 @@
 // Globals
 //-----------------------------------------------------------------------------
 
+/*
+ * Each table carries an explicit `@type` rather than leaning on inference.
+ * Without it, declaration emit turns every table into an `export namespace`
+ * with one `let` per global — and `let eval` is a syntax error in a module,
+ * which is automatically strict (TS1215). The file is reached by declaration
+ * emit because `lib/rules/utils/ast-utils.js` requires it, and
+ * `tests/lib/types/types.js` recompiles the emitted declarations.
+ */
+
+/** @type {Record<string, boolean>} */
 const commonjs = {
 	exports: true,
 	global: false,
@@ -16,6 +26,7 @@ const commonjs = {
 	require: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es3 = {
 	Array: false,
 	Boolean: false,
@@ -56,11 +67,13 @@ const es3 = {
 	valueOf: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es5 = {
 	...es3,
 	JSON: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es2015 = {
 	...es5,
 	ArrayBuffer: false,
@@ -86,10 +99,12 @@ const es2015 = {
 };
 
 // no new globals in ES2016
+/** @type {Record<string, boolean>} */
 const es2016 = {
 	...es2015,
 };
 
+/** @type {Record<string, boolean>} */
 const es2017 = {
 	...es2016,
 	Atomics: false,
@@ -97,15 +112,18 @@ const es2017 = {
 };
 
 // no new globals in ES2018
+/** @type {Record<string, boolean>} */
 const es2018 = {
 	...es2017,
 };
 
 // no new globals in ES2019
+/** @type {Record<string, boolean>} */
 const es2019 = {
 	...es2018,
 };
 
+/** @type {Record<string, boolean>} */
 const es2020 = {
 	...es2019,
 	BigInt: false,
@@ -114,6 +132,7 @@ const es2020 = {
 	globalThis: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es2021 = {
 	...es2020,
 	AggregateError: false,
@@ -121,24 +140,29 @@ const es2021 = {
 	WeakRef: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es2022 = {
 	...es2021,
 };
 
+/** @type {Record<string, boolean>} */
 const es2023 = {
 	...es2022,
 };
 
+/** @type {Record<string, boolean>} */
 const es2024 = {
 	...es2023,
 };
 
+/** @type {Record<string, boolean>} */
 const es2025 = {
 	...es2024,
 	Float16Array: false,
 	Iterator: false,
 };
 
+/** @type {Record<string, boolean>} */
 const es2026 = {
 	...es2025,
 	AsyncDisposableStack: false,

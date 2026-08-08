@@ -60,14 +60,23 @@ const ANNOTATED_CONSUMER = path.join(FIXTURE_DIR, "annotated-consumer.js");
 const ANNOTATED_WITH_ERROR = path.join(FIXTURE_DIR, "annotated-with-error.js");
 
 /**
- * The un-annotated module `annotated-consumer.js` reaches for. It is the
- * measured chokepoint of `lib/` and is deliberately not converted yet, which
- * makes it the honest subject for this demonstration.
+ * The un-annotated module `annotated-consumer.js` reaches for.
+ *
+ * This was `lib/rules/utils/ast-utils.js` until that file was annotated, at
+ * which point the guard below fired and said so. It is now a rule module:
+ * `lib/rules/` is outside this epic's phases 0-2 entirely, so it will stay
+ * un-annotated for longer than anything in `lib/shared` or
+ * `lib/rules/utils`. When it too is converted, this constant, the fixture in
+ * `tests/fixtures/types/allowlist-growth/` and the two assertions naming it
+ * all move together.
  */
 const UNANNOTATED_DEPENDENCY = path.join(
 	ROOT_DIR,
-	"lib/rules/utils/ast-utils.js",
+	"lib/rules/no-unused-vars.js",
 );
+
+/** `UNANNOTATED_DEPENDENCY` as the diagnostics and traversal lists spell it. */
+const UNANNOTATED_DEPENDENCY_NAME = "lib/rules/no-unused-vars.js";
 
 /**
  * Loads the real gate configuration, so these tests describe the shipped
@@ -209,7 +218,7 @@ describe("allowlist growth vs. import traversal", () => {
 
 			assert.include(
 				traversed,
-				"lib/rules/utils/ast-utils.js",
+				UNANNOTATED_DEPENDENCY_NAME,
 				"The un-annotated dependency was not pulled into the program, so the demonstration below would be vacuous.",
 			);
 
@@ -217,7 +226,7 @@ describe("allowlist growth vs. import traversal", () => {
 				program
 					.getSourceFile(UNANNOTATED_DEPENDENCY)
 					.text.startsWith("// @ts-check"),
-				"lib/rules/utils/ast-utils.js has been annotated. Point this demonstration at a file that still has not been, or it no longer demonstrates anything.",
+				`${UNANNOTATED_DEPENDENCY_NAME} has been annotated. Point this demonstration at a file that still has not been, or it no longer demonstrates anything.`,
 			);
 		});
 	});
@@ -269,7 +278,7 @@ describe("allowlist growth vs. import traversal", () => {
 			);
 
 			const fromUnannotated = diagnostics.filter(
-				({ file }) => file === "lib/rules/utils/ast-utils.js",
+				({ file }) => file === UNANNOTATED_DEPENDENCY_NAME,
 			);
 
 			assert.isAbove(

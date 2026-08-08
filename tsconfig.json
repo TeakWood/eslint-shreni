@@ -52,6 +52,7 @@
     "lib/linter/code-path-analysis/id-generator.js",
 
     // lib/rules/utils/
+    "lib/rules/utils/ast-utils.js",
     "lib/rules/utils/code-path-utils.js",
     "lib/rules/utils/keywords.js",
     "lib/rules/utils/lazy-loading-rule-map.js",

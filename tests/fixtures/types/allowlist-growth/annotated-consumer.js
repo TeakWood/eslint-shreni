@@ -3,7 +3,7 @@
  * @fileoverview Stands in for the next annotated source added to the
  * `tsconfig.json` allowlist.
  *
- * It carries the `// @ts-check` pragma and requires `lib/rules/utils/ast-utils.js`,
+ * It carries the `// @ts-check` pragma and requires `lib/rules/no-unused-vars.js`,
  * which is NOT annotated and NOT in the allowlist. TypeScript pulls a required
  * file into the program whether or not it is a root file, so this is the exact
  * shape of the trap: the allowlist selects roots, import traversal selects the
@@ -16,6 +16,6 @@
 
 "use strict";
 
-const astUtils = require("../../../../lib/rules/utils/ast-utils.js");
+const rule = require("../../../../lib/rules/no-unused-vars.js");
 
-module.exports = { astUtils };
+module.exports = { rule };
