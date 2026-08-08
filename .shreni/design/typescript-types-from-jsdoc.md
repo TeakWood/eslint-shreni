@@ -885,3 +885,101 @@ devDependency **or** by a `declare module` block in `lib/types/vendor.d.ts`, and
 never by both. Adding a new `needs-@types` dependency fails that test, and so
 does half of the `y6r.17` swap — deleting the `imurmurhash` ambient without
 declaring `@types/imurmurhash`, or declaring it without deleting the ambient.
+
+## Restoring a green CI baseline
+
+`eslint-shreni-beads-6qe`. CI has never been green on this fork. The same three
+jobs — **Verify Files**, **Browser Test**, **Test (windows-latest, lts/\*)** —
+failed on every run from `31214429100` through `31257612712`. Two of the three
+are consequences of decisions recorded above, which is why they belong in this
+note rather than in a document of their own.
+
+The three causes are unrelated to each other and the fixes touch disjoint files
+(`knip.jsonc`, `tests/lib/types/*.js`, `tsconfig.json`). What follows is the
+part that outlives the fix: the constraints each one places on later beads.
+
+### The probe pattern is not portable, and every bead inherits it
+
+The suites this note keeps reaching for — `vendor.js`, `core-vocabulary.js`,
+`ast-vocabulary.js`, `declared-types-packages.js` — all build an in-memory
+compiler host whose file map is keyed by `path.join(PROBE_DIR, name)`. On
+Windows that produces backslashes. `ts.createProgram` runs `normalizePath` on
+root names and then asks the host for **forward-slash** paths, so
+`contents.has(fileName)` never matches, the override falls through to the real
+filesystem, and the probe is silently dropped from the program.
+
+Silently is the operative word. A dropped probe yields an empty diagnostic
+array, and an empty diagnostic array is exactly what `expectError`'s negative
+probes are asserting against — so the failure inverts the test's meaning rather
+than tripping it. On Windows the suites reported 28 failures; had the assertions
+been written the other way round they would have reported success while checking
+nothing.
+
+**Rule for every suite that follows: host keys must be forward-slash
+normalized.** `path.join(...).replaceAll(path.sep, "/")`, applied to probe paths
+and to the `.d.ts` root names alike. The root names happen to survive without it
+because `Program.getSourceFile` normalizes internally — normalize them anyway,
+so the file has one convention instead of two that differ by accident.
+
+This matters disproportionately because the pattern is load-bearing and
+growing. The negative-probe technique is what makes `vendor.js`,
+`core-vocabulary.js` and `declared-types-packages.js` worth their runtime at
+all, per the three sections above; the Windows failure count grew 2 → 7 → 13 →
+28 as each suite landed, and `declared-types-packages.js` shipped with the same
+defect at `:226` before the first fix was written. Every remaining annotation
+bead adds another suite.
+
+A second, smaller portability bug sits in `tests/lib/types/types.js:33`, which
+invokes `node_modules/.bin/tsc` through `execFileSync`. On Windows npm writes
+`tsc.cmd`; the extension-less `tsc` is a POSIX shell script `CreateProcess`
+cannot launch, so `spawnSync` fails before launch and reports `status: null`
+with empty output. Invoke the compiler as
+`execFileSync(process.execPath, [node_modules/typescript/bin/tsc, …])` instead —
+it sidesteps the `.cmd`-versus-shell-script split without a platform branch.
+
+### The root `tsconfig.json` is visible to tools that never asked for it
+
+Introducing a root `tsconfig.json` (commit `186ce5981`) had one consequence
+outside the type-check gate. Cypress loads `cypress.config.js` through its
+bundled `ts-node`, using **the project's** TypeScript, and hard-codes
+`moduleResolution: 'node'` (= `node10`). `ts-node` only hooks `.js` files when
+`allowJs` is on — which it became the moment a root config existed with
+`"allowJs": true`. Under TypeScript 6.0.3 that injected `node10` is a hard
+`TS5107`, so Cypress dies loading its config before any spec runs. Upstream
+`eslint/eslint` prints `Couldn't find tsconfig.json`; this fork prints
+`Missing baseUrl in compilerOptions`, which is the whole difference.
+
+The fix is a top-level `"ts-node"` key in `tsconfig.json` carrying
+`ignoreDeprecations`. Scope it there deliberately: putting `ignoreDeprecations`
+into `tsconfig.base.json`'s `compilerOptions` also works and also leaves `tsc`
+at exit 0, but it would silence deprecation errors for the type-check gate —
+the one consumer in this repo that must keep reporting them, given the
+TypeScript 6.x floor and the `node16`/`nodenext` commitment recorded above.
+
+The general point for later phases: the gate's configuration is read by tools
+that are not the gate. `tsconfig.base.json` is the wrong place for anything
+whose purpose is to make one consumer quiet.
+
+### A stopgap in `knip.jsonc` that a later bead must remove
+
+Knip reports `lib/eslint/worker.js` as unused. It is loaded only dynamically,
+via `pathToFileURL` at `lib/eslint/eslint.js:450`, which Knip cannot follow;
+upstream it stayed reachable through a **static** JSDoc tag at
+`lib/eslint/eslint.js:67`, `@import { WorkerLintResults } from "./worker.js"`,
+which the baseline strip (`6386c7b42`) removed along with every other type
+comment. This is the one of the three that is inherited rather than
+self-inflicted — and the section above already recorded it as a known finding
+when checking that the six `@types` packages needed no Knip changes.
+
+It is fixed by declaring `worker.js` in the `entry` array, not by adding it to
+`ignore`: it genuinely is a worker-thread entry point, and `entry` says so
+while `ignore` would merely suppress the report along with any future finding
+in the file.
+
+**That entry is temporary.** The real fix is the return of the `@import` tag,
+which happens when `lib/eslint/eslint.js` is annotated — phase 3+, outside this
+epic's scope, which is why the job could not simply be waited out. **The bead
+that annotates `lib/eslint/eslint.js` must delete the `entry` declaration and
+confirm Knip still exits 0.** Left in place past that point it masks
+`worker.js` permanently, and a file that later becomes genuinely orphaned, or
+whose entry points change, will never be reported.
