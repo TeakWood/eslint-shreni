@@ -46,6 +46,25 @@
     // lib/cli-engine/
     "lib/cli-engine/hash.js",
 
+    /*
+     * lib/languages/js/source-code/token-store/ — depends only on lib/shared.
+     * `cursors.js` is deliberately absent: its `createCursor` picks a base
+     * class from an instance field at runtime and then conditionally wraps it,
+     * so its honest return type is a six-way union. It has its own bead.
+     */
+    "lib/languages/js/source-code/token-store/backward-token-comment-cursor.js",
+    "lib/languages/js/source-code/token-store/backward-token-cursor.js",
+    "lib/languages/js/source-code/token-store/cursor.js",
+    "lib/languages/js/source-code/token-store/decorative-cursor.js",
+    "lib/languages/js/source-code/token-store/filter-cursor.js",
+    "lib/languages/js/source-code/token-store/forward-token-comment-cursor.js",
+    "lib/languages/js/source-code/token-store/forward-token-cursor.js",
+    "lib/languages/js/source-code/token-store/index.js",
+    "lib/languages/js/source-code/token-store/limit-cursor.js",
+    "lib/languages/js/source-code/token-store/padded-token-cursor.js",
+    "lib/languages/js/source-code/token-store/skip-cursor.js",
+    "lib/languages/js/source-code/token-store/utils.js",
+
     // lib/linter/
     "lib/linter/interpolate.js",
     "lib/linter/timing.js",

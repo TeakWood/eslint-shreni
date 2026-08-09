@@ -1337,6 +1337,123 @@ described rather than silently accepted, and
 without retiring the note — the same shape as the `AssignmentPattern` tripwire
 above.
 
+## `token-store`: a public API of overload families (`y6r.10`)
+
+`lib/languages/js/source-code/token-store/`, twelve of its thirteen files.
+`cursors.js` is left for `y6r.11` — its `createCursor` picks a base class out of
+an instance field at runtime and then wraps it under three independent flags, so
+its honest return type is a six-way union and it does not belong in a bead about
+the store.
+
+The subtree is an L1 layer: it requires nothing inside `lib/` but `lib/shared`
+and the vocabulary, and `tests/lib/types/token-store.js` now enforces that the
+same way the `code-path-analysis` suite does for its own subtree.
+
+### One signature over a widened union loses the whole result type
+
+Every public getter's result is decided by its option argument. `SkipOptions` and
+`CountOptions` each admit a number (`skip`/`count`), a bare filter function, and
+an option object — and **only** the object form with `includeComments: true` can
+ever put a `Comment` in the result. A single signature over the union has to
+return `Token | Comment | null`, which forces the overwhelming majority of
+callers — the ones that pass nothing, a number or a filter — to handle a
+`Comment` that cannot occur.
+
+So each getter is an overload family, written with JSDoc `@overload` blocks
+(supported on class methods, and accepted by `eslint-plugin-jsdoc` as long as the
+_implementation_ block carries the block description — only that last block is
+attached to the node):
+
+| overload                                     | result             |
+| -------------------------------------------- | ------------------ |
+| the comment-inclusive object form            | `Token \| Comment` |
+| the token-only forms                         | `Token`            |
+| the whole `SkipOptions`/`CountOptions` union | `Token \| Comment` |
+
+The third member is the one that is easy to leave out and should not be. Without
+it, a caller forwarding a value it only knows as `SkipOptions` — which is what
+every wrapper around these getters does — matches neither of the first two and
+fails to compile, so each wrapper would have to re-discriminate the union itself.
+It also keeps the class assignable to `SourceCode`'s declaration in
+`core.d.ts`, which `source-code.js` will need when it converts.
+
+`getTokens` and `getTokensBetween` need a **fourth**, and a different token-only
+shape, because a number means something different to them:
+`createCursorWithPadding` reads it as padding, never as `count`. A family reusing
+the count-shaped option type would silently type `getTokens(node, 2, 2)` as a
+count query.
+
+Mutation-tested: deleting one token-only overload leaves `pnpm lint:types` at
+exit 0 and fails four probes. The gate cannot see this at all — which is why the
+suite pairs each token-only probe with a rejection of the same call under the
+comment-inclusive form. With one widened signature both halves pass.
+
+### Symbol-keyed slots infer, but the one that matters does not
+
+All of `TokenStore`'s state lives in computed `Symbol()` keys. TypeScript _does_
+read `this[TOKENS] = tokens` in a JS constructor as a property declaration when
+the key is a module-level `const` (an inferred `unique symbol`), so `TOKENS` and
+`COMMENTS` would have typed themselves from their arguments. `INDEX_MAP` would
+not: it comes from `Object.create(null)`, so it infers as `any` and takes every
+index lookup in the file with it, with nothing anywhere going red.
+
+All three are annotated, so the file has one convention rather than two that
+differ by accident. The map's shape lives in `utils.js` as an `IndexMap`
+typedef — an index signature rather than a `Map`, because the object has no
+prototype and every read can miss, which is why all three readers guard with
+`in` first.
+
+These slots are unreachable from outside the class, so the suite reads them off
+the checker: the properties come back named `__@INDEX_MAP@<id>`, and
+`typeToString` on each is what distinguishes a declared slot from a decayed one.
+Loosening the annotation to `any` leaves the gate green and fails only that test.
+
+### A cast at the boundary of the file that was deliberately not converted
+
+`cursors.js` stays un-annotated, so its two factory methods infer as returning
+`any` — and `index.js` reaches a factory at sixteen sites. Left alone, that `any`
+would spread through every getter in the file.
+
+`index.js` therefore names the contract it relies on as a local `CursorFactory`
+typedef and types the `factory` parameters of its three private helpers against
+it. Because the inferred `any`-returning methods are assignable to that shape,
+fifteen of the sixteen sites need no cast at all; the sixteenth
+(`getTokenByRangeStart`, the only place a factory is reached directly rather than
+passed as an argument) takes one. The typedef states its own retirement, and
+`tests/lib/types/token-store.js` asserts both that `cursors.js` is still absent
+from the allowlist and that `index.js` still carries the typedef and its
+retirement note — so the follow-up bead is told to delete it rather than
+inheriting a stale widening that reads like a real constraint.
+
+### `Boolean(x) && x.y` needs an assertion, again
+
+Both token-and-comment cursors end `moveNext()` with
+`Boolean(this.current) && (… this.current.range[…] …)`. TypeScript does not
+narrow through a `Boolean()` call, so the second operand still sees
+`Token | Comment | null`. The same shape appears in `Cursor#getAllTokens` and
+`FilterCursor#moveNext`, where the guarantee is `moveNext()` returning `true`
+rather than a `Boolean()` call.
+
+All four are comment-and-cast only, and each says in place that the guard above
+it is load-bearing. That matters more here than the type does: the obvious
+"simplification" is to delete a guard the compiler appears not to be using.
+
+### `isCommentToken` narrows to a different `Comment`
+
+`@eslint-community/eslint-utils` types `isCommentToken` as
+`(token) => token is estree.Comment`, and `@types/estree`'s `Comment` is a weaker
+declaration than ours — it omits `"Shebang"` from `type` and declares
+`range`/`loc` optional, both of them divergences this vocabulary rejected
+`@types/estree` over. Its runtime test is
+`["Block", "Line", "Shebang"].includes(token.type)`, which is exactly right for
+anything a cursor yields; only the declaration disagrees. So the narrowing is
+restated in this vocabulary at the two places it is consumed, rather than the
+predicate being reached for a shape it cannot describe.
+
+`getCommentsInside` needs an assertion for a different reason: `filter:` is
+passed as an _option_, and TypeScript cannot carry a predicate given that way
+into a return type.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the
