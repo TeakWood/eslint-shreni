@@ -1337,13 +1337,12 @@ described rather than silently accepted, and
 without retiring the note — the same shape as the `AssignmentPattern` tripwire
 above.
 
-## `token-store`: a public API of overload families (`y6r.10`)
+## `token-store`: a public API of overload families (`y6r.10`, `y6r.11`)
 
-`lib/languages/js/source-code/token-store/`, twelve of its thirteen files.
-`cursors.js` is left for `y6r.11` — its `createCursor` picks a base class out of
-an instance field at runtime and then wraps it under three independent flags, so
-its honest return type is a six-way union and it does not belong in a bead about
-the store.
+`lib/languages/js/source-code/token-store/`, all thirteen files. Twelve landed
+with `y6r.10`; `cursors.js` came last, in `y6r.11`, because its `createCursor`
+picks a base class out of an instance field at runtime and then wraps it under
+three independent flags.
 
 The subtree is an L1 layer: it requires nothing inside `lib/` but `lib/shared`
 and the vocabulary, and `tests/lib/types/token-store.js` now enforces that the
@@ -1408,22 +1407,41 @@ the checker: the properties come back named `__@INDEX_MAP@<id>`, and
 `typeToString` on each is what distinguishes a declared slot from a decayed one.
 Loosening the annotation to `any` leaves the gate green and fails only that test.
 
-### A cast at the boundary of the file that was deliberately not converted
+### A six-way runtime union is honestly a one-way interface (`y6r.11`)
 
-`cursors.js` stays un-annotated, so its two factory methods infer as returning
-`any` — and `index.js` reaches a factory at sixteen sites. Left alone, that `any`
-would spread through every getter in the file.
+`cursors.js` decides its result from four runtime values the compiler cannot
+see. `createBaseCursor` reads its constructor out of an **instance field**
+(`this.TokenCursor` / `this.TokenCommentCursor`), and `createCursor` then wraps
+that result in `FilterCursor`, `SkipCursor` and `LimitCursor` under three
+independent flags. Enumerated, the declared result is six classes.
 
-`index.js` therefore names the contract it relies on as a local `CursorFactory`
-typedef and types the `factory` parameters of its three private helpers against
-it. Because the inferred `any`-returning methods are assignable to that shape,
-fifteen of the sixteen sites need no cast at all; the sixteenth
-(`getTokenByRangeStart`, the only place a factory is reached directly rather than
-passed as an argument) takes one. The typedef states its own retirement, and
-`tests/lib/types/token-store.js` asserts both that `cursors.js` is still absent
-from the allowlist and that `index.js` still carries the typedef and its
-retirement note — so the follow-up bead is told to delete it rather than
-inheriting a stale widening that reads like a real constraint.
+It is declared as `Cursor` — the shared interface in `cursor.js` that every one
+of the six reaches through `extends` — and that is the honest type rather than a
+concession. A six-way union would name members no caller could narrow to, since
+the discriminating values are arguments rather than types; and `index.js`
+consumes only `current` / `moveNext()` / `getOneToken()` / `getAllTokens()`,
+which is precisely the base class's surface. The classes held in the instance
+fields get a matching constructor typedef, `BaseCursorClass`, whose instance type
+is that same interface.
+
+This retires the `CursorFactory` widening `y6r.10` left in `index.js`. That
+typedef restated the two factory methods structurally, because an un-annotated
+`cursors.js` inferred as returning `any`; it is now
+`@typedef {typeof cursors.forward} CursorFactory`, derived from the export it
+describes and unable to drift from it, and the cast in `getTokenByRangeStart` is
+gone. The guard in `tests/lib/types/token-store.js` was **inverted** rather than
+deleted — it now fails if the structural restatement comes back — which is the
+same servicing the `include-traversal` tripwire got: a test that knows how it
+will die should survive the transition it predicted.
+
+The gate cannot see any of this. Both mutations tried — `@returns {any}` on
+`createBaseCursor`, and `@param {any}` on a constructor field — leave
+`pnpm lint:types` at exit 0, because an `any` type-checks clean forever. Worse,
+`any` is assignable to everything, so every "is the result a cursor?" probe
+passes against a module that declares nothing. The suite therefore reads the
+result type off the checker and asserts the **file its symbol was declared in**
+is `cursor.js`; an `any` has no symbol at all, and a hand-rolled look-alike would
+print the same name from the wrong file.
 
 ### `Boolean(x) && x.y` needs an assertion, again
 

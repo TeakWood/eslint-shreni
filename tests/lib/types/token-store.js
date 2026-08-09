@@ -1,17 +1,18 @@
 /**
  * @fileoverview Guards the annotation of
- * `lib/languages/js/source-code/token-store/`, excluding `cursors.js` — that
- * file picks its base cursor class from an instance field at runtime and then
- * conditionally wraps it, so its honest return type is a six-way union, and it
- * has its own bead.
+ * `lib/languages/js/source-code/token-store/` — all thirteen files, `cursors.js`
+ * included.
  *
- * These twelve files ARE compiled by the shipped gate, so it is tempting to
- * conclude that `tsc` already validates them. It does not validate the thing
- * that matters. An undocumented parameter in a `.js` file is an implicit `any`,
- * and `any` type-checks clean forever — so "the gate is green" and "the module
- * is typed" stay different claims, and only these probes assert the second.
+ * These files ARE compiled by the shipped gate, so it is tempting to conclude
+ * that `tsc` already validates them. It does not validate the thing that
+ * matters. An undocumented parameter in a `.js` file is an implicit `any`, and
+ * `any` type-checks clean forever — so "the gate is green" and "the module is
+ * typed" stay different claims, and only these probes assert the second. That
+ * gap is at its widest in `cursors.js`, whose factories return a cursor built
+ * from an instance field: un-annotated they returned `any`, and every
+ * assignability probe below would have passed while asserting nothing.
  *
- * Three claims here cannot be made any other way:
+ * Four claims here cannot be made any other way:
  *
  * 1. The OVERLOAD FAMILIES. Every public getter's result type is decided by its
  *    option argument: only the object form with `includeComments: true` can
@@ -27,7 +28,14 @@
  *    lookup in the file with it, invisibly. The slot types are read off the
  *    checker rather than asserted structurally.
  *
- * 3. The layer invariant. This subtree is annotated at all only because it
+ * 3. The cursor factories. `createBaseCursor` picks its class from an instance
+ *    field and `createCursor` then wraps the result under three independent
+ *    flags, so the concrete class is one of six. The claim being guarded is
+ *    that both are typed through the SHARED CURSOR INTERFACE — the type each
+ *    returns is read off the checker and its DECLARING FILE asserted to be
+ *    `cursor.js`, which neither `any` nor a hand-rolled look-alike can satisfy.
+ *
+ * 4. The layer invariant. This subtree is annotated at all only because it
  *    depends on nothing inside `lib/` but `lib/shared`; one innocuous
  *    `require("../../../rules/utils/...")` would destroy that, and nothing else
  *    in the repo checks it.
@@ -73,11 +81,12 @@ const PROBE_DIR = probePath(REPO_ROOT, "lib");
  */
 const CORE_DTS = probePath(REPO_ROOT, "lib/types/core.d.ts");
 
-/** The twelve files this bead annotated. */
+/** Every file in the subtree. All thirteen are annotated. */
 const ANNOTATED_FILES = [
 	`${SUBTREE}/backward-token-comment-cursor.js`,
 	`${SUBTREE}/backward-token-cursor.js`,
 	`${SUBTREE}/cursor.js`,
+	`${SUBTREE}/cursors.js`,
 	`${SUBTREE}/decorative-cursor.js`,
 	`${SUBTREE}/filter-cursor.js`,
 	`${SUBTREE}/forward-token-comment-cursor.js`,
@@ -89,16 +98,14 @@ const ANNOTATED_FILES = [
 	`${SUBTREE}/utils.js`,
 ];
 
-/** The one file in the subtree this bead deliberately left alone. */
-const DEFERRED_FILE = `${SUBTREE}/cursors.js`;
-
 /**
  * Mirrors the resolution- and inference-relevant options of the shipped gate
  * (`tsconfig.base.json`).
  *
  * `checkJs` stays off for the same reason the gate keeps it off: a probe must
- * not be able to fail because of an unconverted file somewhere downstream —
- * `cursors.js` in particular.
+ * not be able to fail because of an unconverted file somewhere downstream. The
+ * probes below therefore read what these files DECLARE, which is what `checkJs`
+ * does not affect.
  */
 const COMPILER_OPTIONS = {
 	strict: true,
@@ -113,6 +120,9 @@ const COMPILER_OPTIONS = {
 	moduleResolution: ts.ModuleResolutionKind.NodeNext,
 };
 
+/** The subtree path as a probe file sees it, relative to `lib/`. */
+const FROM_LIB = SUBTREE.slice("lib/".length);
+
 /** Every probe below opens with these two lines. */
 const PREAMBLE = `import TokenStore = require("./${SUBTREE.slice("lib/".length)}/index.js");
 	import type { ASTNode, Comment, CountOptions, SkipOptions, Token } from "./types/core.js";
@@ -120,6 +130,20 @@ const PREAMBLE = `import TokenStore = require("./${SUBTREE.slice("lib/".length)}
 	declare const node: ASTNode;
 	declare const other: ASTNode;
 	void store; void node; void other;
+	`;
+
+/**
+ * The extra declarations the cursor-factory probes need. Appended to
+ * `PREAMBLE` by the probes that use it.
+ */
+const CURSORS_PREAMBLE = `import cursors = require("./${FROM_LIB}/cursors.js");
+	import type { IndexMap } from "./${FROM_LIB}/utils.js";
+	import type { TokenFilter } from "./types/core.js";
+	declare const tokens: Token[];
+	declare const comments: Comment[];
+	declare const indexMap: IndexMap;
+	declare const filter: TokenFilter;
+	void cursors; void tokens; void comments; void indexMap; void filter;
 	`;
 
 /**
@@ -231,6 +255,75 @@ function expectError(name, source, code) {
 }
 
 /**
+ * Finds the `const probe` declaration a type-reading probe is required to make.
+ * @param {ts.SourceFile} sourceFile The compiled probe.
+ * @returns {ts.Node} The identifier bound by `const probe`.
+ */
+function probeDeclaration(sourceFile) {
+	/** @type {ts.Node | null} */
+	let declaration = null;
+
+	ts.forEachChild(sourceFile, function visit(child) {
+		if (
+			ts.isVariableDeclaration(child) &&
+			child.name.getText() === "probe"
+		) {
+			declaration = child.name;
+		}
+		ts.forEachChild(child, visit);
+	});
+
+	assert.isNotNull(declaration, "the probe must declare `const probe`");
+
+	return declaration;
+}
+
+/**
+ * Reads the type of `const probe` and the file it was declared in.
+ *
+ * Assignability alone cannot make the claim this is used for. A factory that
+ * returned `any` would satisfy every "is it a cursor?" probe in this file, and
+ * `typeToString` on its own prints whatever local alias is in scope — a
+ * hand-rolled look-alike declared in `cursors.js` would print `Cursor` too.
+ * Reading the DECLARING FILE off the type's symbol is what pins the value to
+ * the shared interface in `cursor.js`.
+ * @param {string} source The probe source. Must declare `const probe`.
+ * @returns {{name: string, file: string}} The printed type name and the
+ * repo-relative file its symbol was declared in.
+ */
+function declaredTypeOf(source) {
+	const name = "probe-declared-type.ts";
+	const { program, diagnostics } = compile({ [name]: PREAMBLE + source });
+
+	assert.strictEqual(
+		diagnostics.length,
+		0,
+		`the probe must compile before its type can be read:\n${format(diagnostics)}`,
+	);
+
+	const checker = program.getTypeChecker();
+	const declaration = probeDeclaration(
+		program.getSourceFile(probePath(PROBE_DIR, name)),
+	);
+	const type = checker.getTypeAtLocation(declaration);
+
+	assert.isDefined(
+		type.symbol,
+		`the probe's type is \`${checker.typeToString(type)}\`, which declares nothing — an \`any\` leaking out of the factory would look exactly like this`,
+	);
+
+	return {
+		name: checker.typeToString(type),
+		file: path
+			.relative(
+				REPO_ROOT,
+				type.symbol.declarations[0].getSourceFile().fileName,
+			)
+			.replaceAll(path.sep, "/"),
+	};
+}
+
+/**
  * Resolves where each member of a `type Probe = ...` union was declared.
  *
  * Structural checks cannot tell "speaks the shared vocabulary" apart from
@@ -253,20 +346,10 @@ function unionMembersOf(source) {
 	);
 
 	const checker = program.getTypeChecker();
-	const sourceFile = program.getSourceFile(probePath(PROBE_DIR, name));
-	let type = null;
+	const type = checker.getTypeAtLocation(
+		probeDeclaration(program.getSourceFile(probePath(PROBE_DIR, name))),
+	);
 
-	ts.forEachChild(sourceFile, function visit(child) {
-		if (
-			ts.isVariableDeclaration(child) &&
-			child.name.getText() === "probe"
-		) {
-			type = checker.getTypeAtLocation(child.name);
-		}
-		ts.forEachChild(child, visit);
-	});
-
-	assert.isNotNull(type, "the probe must declare `const probe`");
 	assert.isTrue(
 		type.isUnion(),
 		"the accepted node type is expected to be a union of the shared vocabulary's node and token shapes",
@@ -308,21 +391,9 @@ function symbolSlotTypes() {
 	);
 
 	const checker = program.getTypeChecker();
-	const sourceFile = program.getSourceFile(probePath(PROBE_DIR, name));
-	let declaration = null;
-
-	ts.forEachChild(sourceFile, function visit(child) {
-		if (
-			ts.isVariableDeclaration(child) &&
-			child.name.getText() === "probe"
-		) {
-			declaration = child.name;
-		}
-		ts.forEachChild(child, visit);
-	});
-
-	assert.isNotNull(declaration, "the probe must declare `const probe`");
-
+	const declaration = probeDeclaration(
+		program.getSourceFile(probePath(PROBE_DIR, name)),
+	);
 	const type = checker.getTypeAtLocation(declaration);
 	/** @type {Record<string, string>} */
 	const slots = {};
@@ -443,7 +514,7 @@ describe("lib/languages/js/source-code/token-store type annotations", () => {
 		 * files are converted at all — dropping one would simply shrink the
 		 * allowlist, consistently.
 		 */
-		it("covers all twelve files, each with a pragma", () => {
+		it("covers all thirteen files, each with a pragma", () => {
 			const tsconfig = readTsconfig();
 
 			for (const file of ANNOTATED_FILES) {
@@ -458,29 +529,14 @@ describe("lib/languages/js/source-code/token-store type annotations", () => {
 		});
 
 		/*
-		 * A test that knows how it will die. `cursors.js` is the deferred file,
-		 * and `index.js` carries a `CursorFactory` typedef whose whole reason to
-		 * exist is that `cursors.js` is un-annotated. When the follow-up bead
-		 * lands, this fails and names the cleanup rather than leaving a stale
-		 * widening that reads like a real constraint.
+		 * The inverse of the guard that stood here while `cursors.js` was
+		 * deferred. `index.js` used to restate the factory's two methods in a
+		 * structural typedef, because an un-annotated `cursors.js` inferred as
+		 * `any`; now that the file is annotated, the typedef must DERIVE from
+		 * the export instead. A restatement would compile just as well and
+		 * drift silently the first time a factory method changes.
 		 */
-		it("leaves cursors.js out, and says so where it matters", () => {
-			const tsconfig = readTsconfig();
-			const source = fs.readFileSync(
-				path.join(REPO_ROOT, DEFERRED_FILE),
-				"utf8",
-			);
-
-			assert.notInclude(
-				tsconfig.files,
-				DEFERRED_FILE,
-				"cursors.js is deferred to its own bead; adding it to the allowlist means retiring the CursorFactory typedef in index.js at the same time",
-			);
-			assert.isFalse(
-				source.startsWith("// @ts-check\n"),
-				"cursors.js has been annotated — retire the CursorFactory typedef in token-store/index.js, take `typeof cursors.forward` directly, drop the cast in getTokenByRangeStart, and delete this test",
-			);
-
+		it("derives the factory type in index.js rather than restating it", () => {
 			const indexSource = fs.readFileSync(
 				path.join(REPO_ROOT, `${SUBTREE}/index.js`),
 				"utf8",
@@ -488,13 +544,13 @@ describe("lib/languages/js/source-code/token-store type annotations", () => {
 
 			assert.include(
 				indexSource,
-				"@typedef {object} CursorFactory",
-				"index.js must keep naming the contract it relies on while cursors.js is un-annotated",
+				"@typedef {typeof cursors.forward} CursorFactory",
+				"index.js must take the factory type from the export it actually calls",
 			);
-			assert.include(
+			assert.notInclude(
 				indexSource,
-				"RETIREMENT",
-				"the CursorFactory typedef must keep stating how it is retired, or the next reader will take it for a permanent shape",
+				"@typedef {object} CursorFactory",
+				"the structural restatement existed only while cursors.js was un-annotated; a second declaration of the same shape can now drift from it",
 			);
 		});
 	});
@@ -803,6 +859,109 @@ describe("lib/languages/js/source-code/token-store type annotations", () => {
 
 				void new FilterCursor(cursor, (n: number) => n > 0);`,
 				2345,
+			);
+		});
+	});
+
+	describe("the cursor factories", () => {
+		/** What both factory methods must hand back. */
+		const SHARED_INTERFACE = {
+			name: "Cursor",
+			file: `${SUBTREE}/cursor.js`,
+		};
+
+		/*
+		 * `createBaseCursor` reads its constructor out of an instance field, so
+		 * the class it instantiates is a runtime value. Naming the field's type
+		 * by the interface every cursor class satisfies is what keeps the
+		 * result a real type instead of an inferred `any`.
+		 */
+		it("builds a base cursor typed by the shared interface", () => {
+			assert.deepStrictEqual(
+				declaredTypeOf(
+					`${CURSORS_PREAMBLE}const probe = cursors.forward.createBaseCursor(tokens, comments, indexMap, 0, -1, true);
+					void probe;`,
+				),
+				SHARED_INTERFACE,
+				"createBaseCursor must be declared against cursor.js — the class it picks is an instance field, so nothing else can describe both branches",
+			);
+		});
+
+		/*
+		 * And the six-way case: filter, skip and count each add a decorator
+		 * independently, so the concrete class is decided by three runtime
+		 * flags. `Cursor` is the honest answer — every one of the six is one,
+		 * and it is the whole surface `index.js` consumes.
+		 */
+		it("builds a decorated cursor typed by the same interface", () => {
+			assert.deepStrictEqual(
+				declaredTypeOf(
+					`${CURSORS_PREAMBLE}const probe = cursors.backward.createCursor(tokens, comments, indexMap, 0, -1, false, filter, 1, 2);
+					void probe;`,
+				),
+				SHARED_INTERFACE,
+			);
+		});
+
+		/*
+		 * The instance fields themselves. These hold CLASSES, and a class-valued
+		 * field is exactly the kind of slot that infers as `any` when its
+		 * `@param` is missing.
+		 */
+		it("holds base cursor classes in its instance fields", () => {
+			assert.deepStrictEqual(
+				declaredTypeOf(
+					`${CURSORS_PREAMBLE}const probe = new cursors.forward.TokenCommentCursor(tokens, comments, indexMap, 0, -1);
+					void probe;`,
+				),
+				SHARED_INTERFACE,
+			);
+			expectError(
+				"probe-factory-class-arity.ts",
+				`${CURSORS_PREAMBLE}void new cursors.backward.TokenCursor(tokens);`,
+				2554,
+			);
+		});
+
+		/*
+		 * The half that makes the three above non-vacuous. While `cursors.js`
+		 * was un-annotated both methods returned `any`, and `any` is assignable
+		 * to everything — so every positive probe would have passed against a
+		 * module that declared nothing at all.
+		 */
+		it("returns a cursor and not an any", () => {
+			expectError(
+				"probe-factory-not-any.ts",
+				`${CURSORS_PREAMBLE}const probe: number = cursors.forward.createCursor(tokens, comments, indexMap, 0, -1, false, null, 0, -1);
+
+				void probe;`,
+				2322,
+			);
+		});
+
+		it("rejects a filter that is not a token predicate", () => {
+			expectError(
+				"probe-factory-filter-bad.ts",
+				`${CURSORS_PREAMBLE}void cursors.forward.createCursor(tokens, comments, indexMap, 0, -1, false, (n: number) => n > 0, 0, -1);`,
+				2345,
+			);
+		});
+
+		/*
+		 * The result must not be narrower than the interface either. Declaring
+		 * the decorated union would let a caller believe a `filter` argument
+		 * guarantees a `FilterCursor`, which the skip and count flags can wrap
+		 * away.
+		 */
+		it("does not promise a particular decorator", () => {
+			expectError(
+				"probe-factory-not-narrow.ts",
+				`${CURSORS_PREAMBLE}import FilterCursor = require("./${FROM_LIB}/filter-cursor.js");
+
+				const probe: FilterCursor = cursors.forward.createCursor(tokens, comments, indexMap, 0, -1, false, filter, 0, -1);
+
+				void probe;`,
+				2739,
 			);
 		});
 	});
