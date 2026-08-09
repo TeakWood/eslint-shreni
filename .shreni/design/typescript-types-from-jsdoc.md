@@ -1472,6 +1472,65 @@ predicate being reached for a shape it cannot describe.
 passed as an _option_, and TypeScript cannot carry a predicate given that way
 into a return type.
 
+## `lib/cli-engine`: a contract with no callers (`y6r.9`)
+
+`lint-result-cache.js` and the four built-in formatters. The layer reaches only
+`lib/shared` and `lib/types`, which is what made it annotatable here; the suite
+enforces that the same way `lib/shared` and `code-path-analysis` enforce theirs.
+
+### A formatter's contract exists only as an annotation
+
+The formatters have **no inbound `require` edge at all**. `loadFormatter`
+resolves them by name at runtime, checks that the module's default export is a
+function, and calls it. Nothing else in the codebase states what that function
+takes or returns, so the `@type {Formatter}` on each `module.exports` is not
+documentation of a contract — it _is_ the contract's only written form.
+
+That makes the usual structural probe useless. An inlined
+`(results: LintResult[], context: FormatterContext) => string` is assignable in
+both directions, satisfies every call probe, and leaves `pnpm lint:types` at exit
+0 — and it is exactly what the bead forbids, because a contract restated in four
+places is four places to drift. Mutation-tested: replacing `Formatter` in
+`json.js` with that inline shape fails only the check that reads the declared
+type's **name** and the **file its symbol was declared in**. This is the
+`declaredTypeOf` technique from `y6r.11`, and it is the only thing that can
+express a "references the shared type" criterion.
+
+### The cache stores a third state `LintResult` cannot express
+
+`setCachedLintResults` writes `source: null` deliberately — not `undefined`, not
+absent — so `getCachedLintResults` knows to reread the file from disk. Three
+states in one optional field, and `LintResult`'s `source?: string` holds two.
+
+So the two halves of the API are declared as different types:
+`getValidCachedLintResults` returns the vendored `CachedLintResult` (the stored
+form, `source?: string | null`) and `getCachedLintResults` returns `LintResult`
+(the rebuilt form). One documented cast sits at the seam, because the branch that
+rereads narrows `results.source` rather than `results`. The suite pins the
+distinction from both sides: the stored form must expose a nullable `source`, and
+must be **rejected** where a `LintResult` is required. Collapsing the two would
+make the reread signal unrepresentable.
+
+### A wrong declaration in our own leaf, corrected rather than cast around
+
+`text-table.js` declared `align` as `("l" | "r")[]` while its own doc sentence
+and its only test (`align[ix] === "r"`) say every other value is left-aligned —
+and `stylish.js` passes `["", "r", "l"]`. The fix is the declaration, not a cast
+at the call site. Same rule the audit applied to `@types/esutils`: do not edit a
+call site to satisfy a declaration that is wrong about the runtime.
+
+### Deriving a type from `@types/node` leaks into the emitted declarations
+
+`StyleFormat` began as `Parameters<typeof util.styleText>[0]`, which is the more
+faithful derivation and type-checks fine. It emits
+`import util = require("node:util")` into `stylish.d.ts`, and the declaration-emit
+suite recompiles the output standalone with `types: []`, where that specifier
+cannot resolve (TS2591). `tsc --noEmit` cannot see this. Spelling out the six
+literals this reporter actually passes is the form that survives emit — and the
+general rule is that a `typeof`-derived type reaches into whatever package
+declared the thing it derives from, which the emitted `.d.ts` then has to be able
+to resolve on its own.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the

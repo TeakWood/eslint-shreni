@@ -43,8 +43,18 @@
     "lib/shared/translate-cli-options.js",
     "lib/shared/traverser.js",
 
-    // lib/cli-engine/
+    /*
+     * lib/cli-engine/ — depends only on lib/shared. The formatters have no
+     * inbound require edge at all: they are loaded by name at runtime, so the
+     * `Formatter` annotation on each `module.exports` is the only thing that
+     * ties them to the contract `loadFormatter` calls.
+     */
     "lib/cli-engine/hash.js",
+    "lib/cli-engine/lint-result-cache.js",
+    "lib/cli-engine/formatters/html.js",
+    "lib/cli-engine/formatters/json-with-metadata.js",
+    "lib/cli-engine/formatters/json.js",
+    "lib/cli-engine/formatters/stylish.js",
 
     /*
      * lib/languages/js/source-code/token-store/ — depends only on lib/shared.
