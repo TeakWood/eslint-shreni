@@ -1221,19 +1221,121 @@ depends on nothing inside `lib/` but `lib/shared` and the `lib/types/`
 vocabulary. Nothing checked it before; `tests/lib/types/code-path-analysis.js`
 does now, the same way `shared-leaf.js` checks the `lib/shared` invariant.
 
-### One escape hatch here belongs to the _next_ bead
+### One escape hatch here belonged to the _next_ bead, and is now retired
 
-`code-path-state.js` is annotated by a later bead. Its `pushForkContext`
-documents its one parameter without marking it optional, so inference makes it
-required even though that file's own callers omit it — and so does
-`code-path-analyzer.js#preprocess`. Rather than edit the reserved file, the
-receiver is widened at that one call site with an intersection carrying the
-correct signature.
+`code-path-analyzer.js#preprocess` carried an intersection re-declaring
+`pushForkContext` with an optional parameter, because `code-path-state.js`
+documented that parameter without marking it optional and inference therefore
+made it required. The suite asserted `code-path-state.js` was still
+un-annotated, with a failure message naming the widening to delete — the same
+"test that knows how it will die" shape as the `include-traversal.js` fixture.
 
-The suite asserts `code-path-state.js` is still un-annotated, with a failure
-message naming the widening to delete. This is the same "test that knows how it
-will die" shape as the `include-traversal.js` fixture: the workaround cannot
-quietly outlive its reason.
+It fired when `y6r.13` landed, the widening is gone, and the assertion has been
+inverted rather than dropped: `tests/lib/types/code-path-state.js` now checks
+that the intersection is **absent** from `code-path-analyzer.js`. A stale
+widening is worse than none, because it reads as a real constraint.
+
+## `code-path-state.js`: a polymorphic context stack (`y6r.13`)
+
+At ~2,300 lines this is the largest file in `lib/`, and its difficulty is not
+the size. Five loop forms share one stack slot, and the code already tells them
+apart informally by reading a `type` string.
+
+### The loop contexts are a discriminated union, and the discriminant has to be declared per subclass
+
+`LoopContextBase` assigns `this.type` from a constructor parameter, so it infers
+as `string` and no `switch` arm narrows anything — the spike above predicted
+this. Declaring the parameter as the `LoopContextType` union does **not** fix
+it: a property's declared type is the base class's, so every subclass would
+still read `type` as the whole union.
+
+What does work is making the base generic in its own discriminant and pinning it
+per subclass:
+
+```js
+/** @template {LoopContextType} [Type=LoopContextType] */
+class LoopContextBase {
+	/* … @param {Type} type … */
+}
+
+/** @extends {LoopContextBase<"WhileStatement">} */
+class WhileLoopContext extends LoopContextBase {
+	/* … */
+}
+```
+
+`context.type === "DoWhileStatement"` then narrows to `DoWhileLoopContext` and
+reaches `entrySegments` and `continueForkContext`, which no other form has. The
+alternative — one flattened shape with every member optional — would type-check
+just as quietly while letting a `for-of` context be handed to
+`makeDoWhileTest()`, so the suite tests both directions: narrowing must reach
+the variant's members **and** must reject a sibling's.
+
+One member is declared on the base rather than per variant.
+`makeContinue()` is the only place that tells loop forms apart by the _presence_
+of `continueDestSegments` instead of by `type`, so it has to be readable on
+every member of the union — including `DoWhileLoopContext`, which never assigns
+it. Its declared type therefore admits `undefined`, and the four forms that do
+assign it narrow that back out.
+
+### `this.x = void 0` is not a property declaration
+
+Measured, not assumed. TypeScript does **not** bind `this.test = void 0;` in a
+constructor as a property declaration, and a leading `@type` tag does not change
+that — every read of the slot is then `TS2339`. `this.test = undefined;` binds
+fine, and so does `this.test = /** @type {boolean | undefined} */ (void 0);`.
+
+This file uses the cast form, because `void 0` is the idiom throughout. The
+distinction is worth knowing before the next annotation bead spends an hour on
+a property that "should" exist.
+
+### The stack pointers stay nullable; the assertion sits at each read
+
+Every `*Context` field on `CodePathState` is genuinely `null` before its first
+`push*` and after the outermost `pop*`, and the `pop*`/`make*` methods
+dereference them with no guard because `CodePathAnalyzer` only calls each
+between the matching push and pop. That ordering is invisible to the checker,
+so something has to give.
+
+Declaring the fields non-nullable would remove ~26 assertions at a stroke, and
+it is the wrong trade: `getBreakContext()`, `getContinueContext()`,
+`getReturnContext()` and `getThrowContext()` all walk these chains and test for
+the end of one, so a non-null declaration would make the loop termination read
+as dead code. The assertions stay at the reads instead — where, for the loop
+stack, they do double duty by also selecting the variant the caller has already
+committed to (`makeWhileTest()` asserts `WhileLoopContext`, and so on).
+
+`getReturnContext()` and `getThrowContext()` are declared as returning a
+structural sink (`{returnedForkContext: {add}}`) rather than the
+`TryContext | CodePathState` union they can actually return. The two candidates
+store different things there — a `ForkContext` and an array with `add()` bolted
+on — and every caller but one wants only somewhere to put segments. That one
+caller, `makeFirstThrowablePathInTryOrCatchBlock()`, asserts `TryContext`, and
+the runtime test that makes it safe (`context === this`) is named in the note.
+
+### A second latent defect this surfaced
+
+`popTryContext()`:
+
+```js
+this.forkContext.makeUnreachable();
+```
+
+`makeUnreachable(startIndex, endIndex)` takes two indices and returns segments;
+every other call in the file is `replaceHead(makeUnreachable(-1, -1))`. With no
+arguments both bounds are `undefined`, `createSegments()` computes `NaN` bounds,
+the inner loop never runs, and the segments it produces have no previous
+segments and are then discarded. The statement's only effect is to consume
+`count` segment ids.
+
+Upstream ESLint carries the same line. It is **not** fixed here: segment ids are
+observable to rules through `CodePathSegment#id`, so both correcting the call
+and deleting it renumber every segment created afterwards, and this bead is an
+annotation. The receiver is widened at that one site so the arity mismatch is
+described rather than silently accepted, and
+`tests/lib/types/code-path-state.js` fails if a later change fixes the call
+without retiring the note — the same shape as the `AssignmentPattern` tripwire
+above.
 
 ## What this work cost CI, and the two debts it left
 

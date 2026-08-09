@@ -1,6 +1,7 @@
 /**
  * @fileoverview Guards the annotation of `lib/linter/code-path-analysis/`,
- * excluding `code-path-state.js` (annotated by a later bead).
+ * excluding `code-path-state.js` — that file is large and difficult enough to
+ * have had its own bead, and its own suite: `code-path-state.js` here.
  *
  * These five files ARE compiled by the shipped gate — they sit in the
  * `tsconfig.json` allowlist — so it is tempting to conclude that `tsc` already
@@ -82,23 +83,11 @@ const ANNOTATED_FILES = [
 ];
 
 /**
- * The one file in this directory the bead deliberately left alone.
- *
- * The suite asserts it is still unannotated — see the note at that test. This
- * is the "test that knows how it will die" pattern the rest of
- * `tests/lib/types/` uses: the day `code-path-state.js` is converted, this
- * suite fails with a message saying so instead of silently going stale.
- */
-const DEFERRED_FILE = "lib/linter/code-path-analysis/code-path-state.js";
-
-/**
  * Mirrors the resolution- and inference-relevant options of the shipped gate
  * (`tsconfig.base.json`).
  *
- * `checkJs` stays off for the same reason the gate keeps it off — and it
- * matters more here than elsewhere, because this subtree requires
- * `code-path-state.js`, which is not annotated yet. A probe must not be able to
- * fail because of an unconverted file downstream.
+ * `checkJs` stays off for the same reason the gate keeps it off: a probe must
+ * not be able to fail because of an unconverted file somewhere downstream.
  */
 const COMPILER_OPTIONS = {
 	strict: true,
@@ -384,22 +373,6 @@ describe("lib/linter/code-path-analysis type annotations", () => {
 					`${file} must carry a @ts-check pragma to actually be checked`,
 				);
 			}
-		});
-
-		/*
-		 * This suite compiles with `checkJs: false` precisely because
-		 * `code-path-state.js` is not converted yet, and the ESCAPE HATCH in
-		 * `code-path-analyzer.js#preprocess` widens `pushForkContext` for the
-		 * same reason. Both become dead weight the moment it lands, so fail
-		 * loudly then rather than leaving two stale workarounds behind.
-		 */
-		it("still leaves code-path-state.js to its own bead", () => {
-			assert.isFalse(
-				fs
-					.readFileSync(path.join(REPO_ROOT, DEFERRED_FILE), "utf8")
-					.startsWith("// @ts-check\n"),
-				`${DEFERRED_FILE} is now annotated. Retire the pushForkContext widening in code-path-analyzer.js#preprocess, then delete this test.`,
-			);
 		});
 	});
 

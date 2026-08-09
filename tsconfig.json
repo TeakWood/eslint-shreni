@@ -51,6 +51,7 @@
     "lib/linter/timing.js",
     "lib/linter/code-path-analysis/code-path-analyzer.js",
     "lib/linter/code-path-analysis/code-path-segment.js",
+    "lib/linter/code-path-analysis/code-path-state.js",
     "lib/linter/code-path-analysis/code-path.js",
     "lib/linter/code-path-analysis/debug-helpers.js",
     "lib/linter/code-path-analysis/fork-context.js",
