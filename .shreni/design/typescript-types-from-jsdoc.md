@@ -1531,6 +1531,60 @@ general rule is that a `typeof`-derived type reaches into whatever package
 declared the thing it derives from, which the emitted `.d.ts` then has to be able
 to resolve on its own.
 
+## `lazy-loading-rule-map.js`: choose the read side (`y6r.8`)
+
+`lib/rules/utils/lazy-loading-rule-map.js` subclasses `Map`, stores `() => Rule`
+loader thunks, and hands back resolved rules. `Map<K, V>` has a single type
+parameter serving both the read and the write side, so **no instantiation
+describes both halves** and the annotation has to choose one and bridge the
+other.
+
+The rule that falls out generalises past this file: **instantiate the base with
+the type callers READ, and confine the imprecision to assertions inside the
+file.** `Map<string, () => Rule>` would be honest about the store and wrong at
+every call site; `Map<string, Rule>` is wrong only about a store that is private
+to this module, and the five places that touch it (the constructor plus `get`,
+`values`, `entries` and `forEach`) each carry a documented assertion. `Rule` is
+an unconstrained type parameter, so `Rule` and `() => Rule` are unrelated and
+every bridge has to step through `unknown`.
+
+### The member that decides it is the one nothing declares
+
+`[Symbol.iterator]` is re-pointed at `entries` by `Object.defineProperties`, so
+iterating yields resolved rules — and it is **inherited**, never declared in the
+class body. Its type is therefore a pure consequence of the base's type
+argument. Under the `Map<string, any>` this file previously carried,
+`for (const [id, rule] of rules)` typed `rule` as `any` and `pnpm lint:types`
+stayed at exit 0. That is the whole case for choosing the read side, and it is
+invisible to every gate in the repo; only the probe suite sees it.
+
+Declaring the alias directly does not work. A class-body `*[Symbol.iterator]()`
+would be runtime code that `Object.defineProperties` immediately overwrites, and
+a JSDoc-typed declaration statement — `/** @type {…} */ this[Symbol.iterator];`,
+the form that _does_ bind for a plain named slot (see `code-path-state.js`) — is
+**not** bound by TypeScript for a well-known-symbol key. Measured both ways: the
+declaration is accepted, emits nothing, and leaves the inherited type in place.
+
+### The poisoned write half cannot be stated at all
+
+`set`, `clear` and `delete` are set to `undefined` on the prototype, so `Map`'s
+callable signatures are lies. They cannot be corrected: redeclaring a member as
+`undefined` while extending `Map` is rejected outright with **TS2415** (a
+subclass member must stay assignable to the base's). So the write half stays
+wrong under any instantiation, which is a second reason to spend the one type
+parameter on the read half — that is the half that can be made true.
+
+Because these are runtime claims the compiler cannot see, the suite pins them at
+runtime instead: the three members really are `undefined`, and
+`prototype[Symbol.iterator] === prototype.entries`. If the poisoning were ever
+removed, the class comment's explanation would silently become false.
+
+One quirk worth knowing before writing any test that constructs this class:
+`super(...iterable)` calls `this.set()`, and the constructor removes `set`
+afterwards — so **only the first construction in a process can carry entries**.
+A later test that builds a populated map throws `TypeError` unless it restores
+`set` first (the constructor takes it away again on the way out).
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the
