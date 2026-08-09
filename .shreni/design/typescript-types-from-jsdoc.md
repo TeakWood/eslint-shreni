@@ -1156,6 +1156,85 @@ Two things about it are worth carrying to the next table:
   on a miss. Typing the lookup `string` makes that guard read as dead code to
   the next person who edits it.
 
+### A `defineProperty` hidden slot has to be declared, and TypeScript will not read the call
+
+`code-path-segment.js` and `code-path.js` both install a non-enumerable
+`internal` slot with `Object.defineProperty(this, "internal", { value: ... })`.
+TypeScript's binder recognises `Object.defineProperty` only when the target is
+an entity name (`Foo.prototype`, a namespace object) — **not** when it is
+`this` inside a constructor. It was probed directly: both the plain form and the
+form with every descriptor flag spelled out leave the property undeclared, and
+every read is `TS2339`.
+
+There is no assignment for structural inference to work from either, which is
+the whole point of the slot. What does work is a JSDoc-typed **declaration
+statement**:
+
+```js
+/** @type {SegmentInternal} */
+// eslint-disable-next-line no-unused-expressions -- Declares the type of the hidden slot installed just below.
+this.internal;
+
+Object.defineProperty(this, "internal", { value: { ... } });
+```
+
+TypeScript binds `/** @type {T} */ this.x;` in a JS constructor as a property
+declaration. The statement evaluates to `undefined` and does nothing at runtime,
+which is why it is preferable to the two alternatives:
+
+- **A plain assignment plus a later `defineProperty`** would leave `writable`
+  and `configurable` `true`, so the descriptor would no longer match.
+- **A class field** would define the property before the constructor body runs
+  and change its insertion order.
+
+`no-unused-expressions` is on in this repo, so the disable comment is part of
+the pattern. Both slots are pinned by `tests/lib/types/code-path-analysis.js` —
+dropping a declaration turns the gate red, but _loosening_ one to `any` leaves
+it green, and only the negative probes notice.
+
+### A widening declared per module, not per repo
+
+`code-path-analyzer.js` and `debug-helpers.js` each carry their own
+`Node = ASTNode & NodeMembers` widening, listing only the members that module
+reads, exactly as `ast-utils.js` does. That is deliberate duplication, not drift:
+`debug-helpers.js` is the leaf of the code-path-analysis subtree — both
+`code-path-segment.js` and `code-path-analyzer.js` require it — so it must not
+point back up at the analyzer, not even for a type.
+
+The two disagree on one member, and the disagreement is the argument for the
+per-module form. `value` is a literal value on a `Literal` and another node on a
+`Property`; `debug-helpers.js` only interpolates it into a string and declares
+it `unknown`, while the analyzer compares it to a node and declares it `Node`.
+A single shared interim widening would have to be wrong for one of them.
+
+The suite pins the part that matters with the checker rather than structurally:
+it walks the intersection members of `enterNode`'s parameter and requires one to
+be `ASTNode` **declared in `lib/types/core.d.ts`**. A hand-rolled shape with the
+same members passes every structural probe and fails that one.
+
+### `code-path-analysis` is a leaf-adjacent subtree, and that is now enforced
+
+`lib/languages/js/source-code/source-code.js` requires
+`lib/linter/code-path-analysis/code-path-analyzer.js` — a `languages/` file
+reaching down into a `linter/` subtree. That is safe only because the subtree
+depends on nothing inside `lib/` but `lib/shared` and the `lib/types/`
+vocabulary. Nothing checked it before; `tests/lib/types/code-path-analysis.js`
+does now, the same way `shared-leaf.js` checks the `lib/shared` invariant.
+
+### One escape hatch here belongs to the _next_ bead
+
+`code-path-state.js` is annotated by a later bead. Its `pushForkContext`
+documents its one parameter without marking it optional, so inference makes it
+required even though that file's own callers omit it — and so does
+`code-path-analyzer.js#preprocess`. Rather than edit the reserved file, the
+receiver is widened at that one call site with an intersection carrying the
+correct signature.
+
+The suite asserts `code-path-state.js` is still un-annotated, with a failure
+message naming the widening to delete. This is the same "test that knows how it
+will die" shape as the `include-traversal.js` fixture: the workaround cannot
+quietly outlive its reason.
+
 ## What this work cost CI, and the two debts it left
 
 `eslint-shreni-beads-6qe`. CI had never been green on this fork. Two of the
