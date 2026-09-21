@@ -621,6 +621,13 @@ describe("bin/eslint.js", () => {
 		const EXISTING_SUPPRESSIONS_PATH =
 			"tests/fixtures/suppressions/existing-eslintsuppressions.json";
 		const SOURCE_PATH = "tests/fixtures/suppressions/test-file.js";
+
+		/*
+		 * A scratch copy of `SOURCE_PATH`, written into the fixtures directory
+		 * so that `--fix` has something it can rewrite in place without
+		 * modifying the shared fixture. It is removed in `after`.
+		 */
+		const TEMP_SOURCE_PATH = "tests/fixtures/suppressions/temp.js";
 		const ARGS_WITHOUT_SUPPRESSIONS = [
 			"--no-config-lookup",
 			"--no-ignore",
@@ -680,6 +687,7 @@ describe("bin/eslint.js", () => {
 
 		after(() => {
 			fs.rmSync(SUPPRESSIONS_PATH, { force: true });
+			fs.rmSync(TEMP_SOURCE_PATH, { force: true });
 		});
 
 		describe("arguments combinations", () => {
@@ -951,14 +959,12 @@ describe("bin/eslint.js", () => {
 				return Promise.all([exitCodeAssertion, outputAssertion]);
 			});
 			it("creates the suppressions file when the --suppress-all flag and --fix is used, and reports no violations", () => {
-				const tempFilePath = "tests/fixtures/suppressions/temp.js";
-
-				fs.copyFileSync(SOURCE_PATH, tempFilePath);
+				fs.copyFileSync(SOURCE_PATH, TEMP_SOURCE_PATH);
 
 				const child = runESLint([
 					"--no-config-lookup",
 					"--no-ignore",
-					tempFilePath,
+					TEMP_SOURCE_PATH,
 					"--suppressions-location",
 					SUPPRESSIONS_PATH,
 					"--suppress-all",
@@ -976,7 +982,7 @@ describe("bin/eslint.js", () => {
 					);
 
 					assert.notExists(
-						suppressionsFiles[tempFilePath].indent,
+						suppressionsFiles[TEMP_SOURCE_PATH].indent,
 						"Suppressions file should not contain any suppressions for indent",
 					);
 				});
