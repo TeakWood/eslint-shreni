@@ -22,6 +22,8 @@ const { promisify } = require("node:util");
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const LINT_TYPES = path.join(REPO_ROOT, "tools", "lint-types.js");
+const TSC = require.resolve("typescript/bin/tsc");
+const PACKAGE_JSON = require(path.join(REPO_ROOT, "package.json"));
 
 /**
  * Base compiler options mirroring the repo's tsconfig.json. `rootDir` is set
@@ -91,6 +93,18 @@ async function runLintTypes(cwd, ...args) {
 }
 
 /**
+ * Runs tsc directly, bypassing the wrapper, to establish what the wrapper is
+ * suppressing.
+ * @param {string} cwd The directory to run in; tsc reads its tsconfig.json.
+ * @param {...string} args Arguments to pass to tsc.
+ * @returns {Promise<ChildProcess>} An object with properties `stdout` and `stderr` on success.
+ * @throws An object with properties `code`, `stdout` and `stderr` on failure.
+ */
+async function runTsc(cwd, ...args) {
+	return await promisify(execFile)(process.execPath, [TSC, ...args], { cwd });
+}
+
+/**
  * Lists the declaration files emitted into a project's output directory.
  * @param {string} projectDir The project directory.
  * @returns {Array<string>} Emitted file names, empty if nothing was emitted.
@@ -147,6 +161,34 @@ describe("lint-types", function () {
 	 * points must suppress it.
 	 */
 	describe("with an empty include array", () => {
+		/*
+		 * Pins the premise of the two tests below. Without this, a future tsc
+		 * that stopped reporting TS18003 for an empty `include` would leave
+		 * them passing while never exercising the suppression they exist to
+		 * cover.
+		 */
+		it("is a case where tsc itself fails with only TS18003", async () => {
+			const projectDir = createProject(
+				"empty-premise",
+				buildTsconfig([]),
+			);
+
+			await assert.rejects(
+				runTsc(projectDir, "--noEmit"),
+				({ code, stdout }) => {
+					assert.notStrictEqual(code, 0);
+					assert.match(stdout, /error TS18003/u);
+					assert.deepStrictEqual(
+						stdout
+							.split("\n")
+							.filter(line => /error TS(?!18003\b)/u.test(line)),
+						[],
+					);
+					return true;
+				},
+			);
+		});
+
 		it("exits 0 in emit mode (build:types)", async () => {
 			const projectDir = createProject("empty-emit", buildTsconfig([]));
 			const childProcess = await runLintTypes(projectDir, "--emit");
@@ -226,6 +268,80 @@ describe("lint-types", function () {
 					assert.match(stderr, /error TS2322/u);
 					return true;
 				},
+			);
+		});
+	});
+
+	/*
+	 * The suppression is scoped to TS18003 alone, not to "tsc failed while
+	 * `include` was empty". A malformed compiler option makes tsc report
+	 * TS6046 alongside TS18003, so the run must still fail.
+	 */
+	describe("with an empty include array and an unrelated error", () => {
+		/**
+		 * Builds a tsconfig whose `target` is invalid, producing TS6046.
+		 * @returns {Object} The tsconfig.json contents.
+		 */
+		function buildMixedTsconfig() {
+			return {
+				compilerOptions: {
+					...COMPILER_OPTIONS,
+					target: "NotAVersion",
+				},
+				include: [],
+			};
+		}
+
+		it("exits 1 and reports the error in emit mode", async () => {
+			const projectDir = createProject(
+				"mixed-emit",
+				buildMixedTsconfig(),
+			);
+
+			await assert.rejects(
+				runLintTypes(projectDir, "--emit"),
+				({ code, stderr }) => {
+					assert.strictEqual(code, 1);
+					assert.match(stderr, /error TS6046/u);
+					return true;
+				},
+			);
+		});
+
+		it("exits 1 and reports the error in no-emit mode", async () => {
+			const projectDir = createProject(
+				"mixed-noemit",
+				buildMixedTsconfig(),
+			);
+
+			await assert.rejects(
+				runLintTypes(projectDir),
+				({ code, stderr }) => {
+					assert.strictEqual(code, 1);
+					assert.match(stderr, /error TS6046/u);
+					return true;
+				},
+			);
+		});
+	});
+
+	/*
+	 * The tests above drive tools/lint-types.js directly. These pin the npm
+	 * scripts to that same entry point, so renaming a script or changing its
+	 * flags cannot silently leave the gates untested.
+	 */
+	describe("npm script wiring", () => {
+		it("maps lint:types to the wrapper with no flags", () => {
+			assert.strictEqual(
+				PACKAGE_JSON.scripts["lint:types"],
+				"node tools/lint-types.js",
+			);
+		});
+
+		it("maps build:types to the wrapper with --emit", () => {
+			assert.strictEqual(
+				PACKAGE_JSON.scripts["build:types"],
+				"node tools/lint-types.js --emit",
 			);
 		});
 	});
