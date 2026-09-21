@@ -292,6 +292,48 @@ describe("lint-types", function () {
 			};
 		}
 
+		/*
+		 * Pins the premise of the tests below: this fixture really does make tsc
+		 * report both codes at once. A config-level diagnostic is the only error
+		 * class that CAN co-occur with TS18003, since an empty file set leaves
+		 * nothing for file-level checks to complain about. Without this test, a
+		 * future tsc that stopped reporting TS18003 here would quietly reduce
+		 * the cases below to duplicates of the plain "real type error" block.
+		 */
+		it("is a case where tsc itself reports TS18003 and TS6046", async () => {
+			const projectDir = createProject(
+				"mixed-premise",
+				buildMixedTsconfig(),
+			);
+
+			await assert.rejects(
+				runTsc(projectDir, "--noEmit"),
+				({ code, stdout }) => {
+					assert.notStrictEqual(code, 0);
+					assert.match(stdout, /error TS18003/u);
+					assert.match(stdout, /error TS6046/u);
+					return true;
+				},
+			);
+		});
+
+		/**
+		 * Asserts the wrapper failed and forwarded tsc's output verbatim.
+		 *
+		 * Matching TS6046 alone would still pass if the wrapper reported only
+		 * the lines it kept in `realErrors`, so the suppressed TS18003 line is
+		 * asserted too: filtering decides the exit code, it must not censor
+		 * what the developer is shown.
+		 * @param {{code: number, stderr: string}} error The rejection value.
+		 * @returns {boolean} Always `true`, so `assert.rejects` accepts it.
+		 */
+		function assertReportsBothErrors({ code, stderr }) {
+			assert.strictEqual(code, 1);
+			assert.match(stderr, /error TS6046/u);
+			assert.match(stderr, /error TS18003/u);
+			return true;
+		}
+
 		it("exits 1 and reports the error in emit mode", async () => {
 			const projectDir = createProject(
 				"mixed-emit",
@@ -300,11 +342,7 @@ describe("lint-types", function () {
 
 			await assert.rejects(
 				runLintTypes(projectDir, "--emit"),
-				({ code, stderr }) => {
-					assert.strictEqual(code, 1);
-					assert.match(stderr, /error TS6046/u);
-					return true;
-				},
+				assertReportsBothErrors,
 			);
 		});
 
@@ -316,11 +354,7 @@ describe("lint-types", function () {
 
 			await assert.rejects(
 				runLintTypes(projectDir),
-				({ code, stderr }) => {
-					assert.strictEqual(code, 1);
-					assert.match(stderr, /error TS6046/u);
-					return true;
-				},
+				assertReportsBothErrors,
 			);
 		});
 	});
