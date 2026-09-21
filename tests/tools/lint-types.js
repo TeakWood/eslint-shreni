@@ -404,6 +404,89 @@ describe("lint-types", function () {
 		});
 	});
 
+	/*
+	 * Every success above reaches exit 0 through the output filter, which for a
+	 * clean run has nothing to keep and so agrees with tsc's own status. None of
+	 * them can tell whether the wrapper trusts `result.status === 0` or merely
+	 * re-derives success from the absence of `error TS` lines. That distinction
+	 * is the wrapper's contract once the staged rollout finishes and the gate
+	 * starts passing for real: a run tsc considers clean must pass, whatever tsc
+	 * printed along the way.
+	 *
+	 * `listFiles` makes tsc name every file it read, so a source path that
+	 * happens to contain the text `error TS2322` puts a line the filter would
+	 * keep into the output of a run that succeeded.
+	 */
+	describe("when tsc succeeds while printing text the filter matches", () => {
+		const DECOY_SOURCE = "src/error TS2322.js";
+
+		/**
+		 * Creates a project whose sole source is named after an error code.
+		 * @param {string} name Directory name, unique within the temp directory.
+		 * @returns {string} The absolute path of the created project directory.
+		 */
+		function createDecoyProject(name) {
+			return createProject(
+				name,
+				{
+					compilerOptions: { ...COMPILER_OPTIONS, listFiles: true },
+					include: ["src"],
+				},
+				{ [DECOY_SOURCE]: VALID_SOURCE },
+			);
+		}
+
+		/**
+		 * Applies the wrapper's own filter to some tsc output.
+		 * @param {string} output The combined output of a tsc run.
+		 * @returns {Array<string>} The lines the filter would treat as errors.
+		 */
+		function keptLines(output) {
+			return output
+				.split("\n")
+				.filter(line => /error TS(?!18003\b)/u.test(line));
+		}
+
+		/*
+		 * Pins the premise of the two tests below: this fixture really does make
+		 * a successful tsc print a line that the filter cannot tell apart from a
+		 * diagnostic. Without it, a future tsc that stopped listing files — or a
+		 * fixture that stopped matching — would leave them passing as ordinary
+		 * duplicates of the clean-project tests above.
+		 */
+		it("is a case where tsc exits 0 having printed such a line", async () => {
+			const projectDir = createDecoyProject("decoy-premise");
+			const { code, output } = await tscOutcome(projectDir, "--noEmit");
+
+			assert.strictEqual(code, 0);
+			assert.ok(
+				keptLines(output).some(line =>
+					line.endsWith("error TS2322.js"),
+				),
+				`expected tsc's output to list ${DECOY_SOURCE}, got ${JSON.stringify(output)}`,
+			);
+		});
+
+		it("exits 0 in no-emit mode (lint:types)", async () => {
+			const projectDir = createDecoyProject("decoy-noemit");
+			const childProcess = await runLintTypes(projectDir);
+
+			assert.strictEqual(childProcess.stderr, "");
+			assert.strictEqual(childProcess.stdout, "");
+		});
+
+		it("exits 0 in emit mode (build:types)", async () => {
+			const projectDir = createDecoyProject("decoy-emit");
+			const childProcess = await runLintTypes(projectDir, "--emit");
+
+			assert.strictEqual(childProcess.stderr, "");
+			assert.strictEqual(childProcess.stdout, "");
+			assert.deepStrictEqual(emittedFiles(projectDir), [
+				"error TS2322.d.ts",
+			]);
+		});
+	});
+
 	describe("with a real type error", () => {
 		/*
 		 * Pins the premise of this block: the fixture fails with an error that
