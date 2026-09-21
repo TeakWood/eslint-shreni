@@ -16,11 +16,27 @@ const { spawnSync } = require("node:child_process");
 const emitMode = process.argv.includes("--emit");
 const tscArgs = emitMode ? [] : ["--noEmit"];
 
-const result = spawnSync("tsc", tscArgs, {
-	encoding: "utf8",
-	stdio: "pipe",
-	shell: false,
-});
+/*
+ * Resolve tsc through the module graph rather than relying on `tsc` being on
+ * PATH. PATH only contains node_modules/.bin when invoked through an npm
+ * script, and on Windows a bare `tsc` never resolves to `tsc.cmd` without a
+ * shell — in both cases spawning by name fails and the gate would silently
+ * pass without ever type-checking anything.
+ */
+const result = spawnSync(
+	process.execPath,
+	[require.resolve("typescript/bin/tsc"), ...tscArgs],
+	{
+		encoding: "utf8",
+		stdio: "pipe",
+		shell: false,
+	},
+);
+
+if (result.error) {
+	process.stderr.write(`Failed to run tsc: ${result.error.message}\n`);
+	process.exit(1);
+}
 
 if (result.status === 0) {
 	process.exit(0);

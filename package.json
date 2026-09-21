@@ -48,6 +48,7 @@
     "test": "node Makefile.js test",
     "test:browser": "node Makefile.js cypress",
     "test:cli": "mocha",
+    "test:coverage": "node Makefile.js mocha",
     "test:ecosystem": "node tools/test-ecosystem/index.mjs",
     "test:ecosystem:update": "node tools/test-ecosystem/update.mjs",
     "test:emfile": "node tools/check-emfile-handling.js",
