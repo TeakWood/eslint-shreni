@@ -794,6 +794,7 @@ describe("lint-types", function () {
 			"lib/shared",
 			"lib/config",
 			"lib/rules/utils",
+			"lib/linter/code-path-analysis",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
@@ -837,6 +838,15 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/rules/utils/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/rules/utils, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/linter/code-path-analysis", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/linter/code-path-analysis/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/linter/code-path-analysis, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -949,6 +959,81 @@ describe("lint-types", function () {
 				.split("\n")
 				.filter(line => /: any\b/u.test(line))
 				.filter(line => !line.includes("[key: string]: any;"));
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * The code path analysis is the densest module in the repo: a 2000-line
+		 * state machine whose context stacks TypeScript cannot follow on its
+		 * own. That makes it the module where falling back to `any` is both
+		 * most tempting and least visible — `lint:types` stays green either
+		 * way, because `strict` reports a *missing* type but never an explicit
+		 * `any` one. The declarations are the only place the difference shows.
+		 */
+		it("emits fully typed declarations for the code path analysis", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const moduleDir = path.join(
+				OUT_DIR,
+				"lib",
+				"linter",
+				"code-path-analysis",
+			);
+
+			/*
+			 * Each loop context pins the inherited `type` to a single literal,
+			 * which is what makes `LoopContext` a discriminated union and lets
+			 * `popLoopContext()` narrow without a cast. Widening any of them
+			 * back to `LoopType` would silently undo that.
+			 */
+			const state = fs.readFileSync(
+				path.join(moduleDir, "code-path-state.d.ts"),
+				"utf8",
+			);
+
+			assert.match(
+				state,
+				/^declare class WhileLoopContext extends LoopContextBase<"WhileStatement"> \{$/mu,
+			);
+			assert.match(
+				state,
+				/^declare class DoWhileLoopContext extends LoopContextBase<"DoWhileStatement"> \{$/mu,
+			);
+
+			/*
+			 * `internal` is attached with `Object.defineProperty()`, which tsc
+			 * cannot see, so it is declared separately. If that declaration is
+			 * dropped the property vanishes from the public surface entirely
+			 * while every other assertion here keeps passing.
+			 */
+			assert.match(
+				fs.readFileSync(
+					path.join(moduleDir, "code-path-segment.d.ts"),
+					"utf8",
+				),
+				/^ {4}internal: CodePathSegmentInternal;$/mu,
+			);
+			assert.match(
+				fs.readFileSync(path.join(moduleDir, "code-path.d.ts"), "utf8"),
+				/^ {4}internal: CodePathState;$/mu,
+			);
+
+			/*
+			 * Nothing in this module is typed `any`. Comment lines are dropped
+			 * first because the preserved JSDoc contains prose such as
+			 * "any type of loop" that a bare text match would trip over.
+			 */
+			const untyped = filesUnder(moduleDir).flatMap(file =>
+				fs
+					.readFileSync(path.join(moduleDir, file), "utf8")
+					.split("\n")
+					.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+					.filter(line => /\bany\b/u.test(line))
+					.map(line => `${file}: ${line.trim()}`),
+			);
 
 			assert.deepStrictEqual(untyped, []);
 		});

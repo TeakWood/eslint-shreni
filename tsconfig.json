@@ -11,6 +11,7 @@
   "include": [
     "lib/shared/**/*.js",
     "lib/config/**/*.js",
-    "lib/rules/utils/**/*.js"
+    "lib/rules/utils/**/*.js",
+    "lib/linter/code-path-analysis/**/*.js"
   ]
 }
