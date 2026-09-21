@@ -8,5 +8,9 @@
     "outDir": "dist/types",
     "skipLibCheck": true
   },
-  "include": ["lib/shared/**/*.js", "lib/config/**/*.js"]
+  "include": [
+    "lib/shared/**/*.js",
+    "lib/config/**/*.js",
+    "lib/rules/utils/**/*.js"
+  ]
 }

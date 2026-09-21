@@ -36,7 +36,11 @@ The runtime CJS output is unchanged.
 		"outDir": "dist/types",
 		"skipLibCheck": true,
 	},
-	"include": ["lib/shared/**/*.js", "lib/config/**/*.js"], // expanded bead-by-bead
+	"include": [
+		"lib/shared/**/*.js",
+		"lib/config/**/*.js",
+		"lib/rules/utils/**/*.js",
+	], // expanded bead-by-bead
 }
 ```
 
@@ -146,6 +150,28 @@ still bite while annotating:
 - `TS8032` forbids `@param options.foo` sub-tags unless the parent is typed
   literally as `{Object}` rather than as a named typedef.
 
+### The rules layer needs its own node type
+
+`lib/shared/types.js` defines `ASTNode` as `import("estree").Node`, which suits
+`lib/shared` and `lib/config` because they only ever read `type` and walk visitor
+keys. It does **not** suit the rules layer. The tree a rule receives is not the
+bare ESTree union: the linter links every node to its `parent` and always
+populates `range` and `loc`, `Literal` carries `regex` and `bigint` as one node
+type rather than three, and third-party parsers feed in node types ESTree does
+not describe at all (JSX, and the TypeScript nodes `ast-utils.js` already matches
+on by name). Annotating `ast-utils.js` against the ESTree union produced 142
+errors, 79 of them `TS2339` on properties that are genuinely there at runtime.
+
+So Cru (`ozv`) introduces the rules-layer vocabulary in
+`lib/rules/utils/ast-utils.js` itself — `ASTNode`, `Token` and `Comment`, each an
+object type that pins the fields which hold for every node or token the linter
+hands to a rule and leaves type-specific fields open via an index signature. Rule
+files reference them as `import("./utils/ast-utils.js").ASTNode`. This is the
+only place in the annotated tree where an index signature is used, and it is a
+deliberate trade: narrowing the ESTree union would mean a cast at nearly every
+property read here _and_ at every call site in the 289 rule files downstream,
+without making a single one of those reads safer.
+
 ### Type-checking alone is not sufficient verification
 
 `tsc --noEmit` cannot see a lost `this` binding. During C2 a refactor in
@@ -189,7 +215,7 @@ each other once Cru is merged.
 
 Annotation coverage is measured by `tsconfig.json`'s `include`, and is
 authoritative — a subtree is done when its files are included **and** carry
-`// @ts-check`. As of C3 (`x04`): **25 of 389 `lib/**/*.js` files** are covered.
+`// @ts-check`. As of Cru (`ozv`): **37 of 389 `lib/**/*.js` files** are covered.
 
 | Bead      | Scope                                        | Files | Status |
 | --------- | -------------------------------------------- | ----- | ------ |
@@ -202,7 +228,7 @@ authoritative — a subtree is done when its files are included **and** carry
 | C7 `052`  | `lib/eslint` + `lib/services`                | 8     | open   |
 | C8 `0sf`  | `lib/cli-engine`                             | 6     | open   |
 | C9 `qs6`  | `lib/rule-tester`                            | 2     | open   |
-| Cru `ozv` | `lib/rules/utils`                            | 12    | open   |
+| Cru `ozv` | `lib/rules/utils`                            | 12    | landed |
 | Cr1–Cr4   | `lib/rules` batches                          | 289   | open   |
 | Crm `7qe` | 4 monster rule files (7158 lines total)      | 4     | open   |
 | C15 `zye` | entry points + `types` exports               | 6     | open   |

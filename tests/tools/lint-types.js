@@ -790,19 +790,26 @@ describe("lint-types", function () {
 	});
 
 	describe("against the repository's own tsconfig.json", () => {
-		const CHECKED_DIRECTORIES = ["lib/shared", "lib/config"];
+		const CHECKED_DIRECTORIES = [
+			"lib/shared",
+			"lib/config",
+			"lib/rules/utils",
+		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
 		/**
 		 * Lists the sources the repo has opted into type-checking.
+		 *
+		 * The walk recurses because `include` patterns do. `lib/rules/utils`
+		 * has a `unicode/` subdirectory, and a flat listing would report full
+		 * coverage of it while leaving every file inside unexamined.
 		 * @returns {Array<string>} Slash-separated repo-relative paths.
 		 */
 		function checkedSources() {
 			return CHECKED_DIRECTORIES.flatMap(directory =>
-				fs
-					.readdirSync(path.join(REPO_ROOT, directory))
-					.filter(name => name.endsWith(".js"))
-					.map(name => `${directory}/${name}`),
+				filesUnder(path.join(REPO_ROOT, directory))
+					.filter(file => file.endsWith(".js"))
+					.map(file => `${directory}/${file}`),
 			);
 		}
 
@@ -824,29 +831,24 @@ describe("lint-types", function () {
 			);
 		});
 
+		it("type-checks lib/rules/utils", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/rules/utils/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/rules/utils, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
 		it("opts every included source into checking with // @ts-check", () => {
 			assert.strictEqual(TSCONFIG_JSON.compilerOptions.checkJs, false);
 
-			const unchecked = [];
-
-			for (const directory of CHECKED_DIRECTORIES) {
-				const directoryPath = path.join(REPO_ROOT, directory);
-
-				for (const name of fs.readdirSync(directoryPath)) {
-					if (!name.endsWith(".js")) {
-						continue;
-					}
-
-					const source = fs.readFileSync(
-						path.join(directoryPath, name),
-						"utf8",
-					);
-
-					if (!/^\/\/ @ts-check$/mu.test(source)) {
-						unchecked.push(`${directory}/${name}`);
-					}
-				}
-			}
+			const unchecked = checkedSources().filter(
+				source =>
+					!/^\/\/ @ts-check$/mu.test(
+						fs.readFileSync(path.join(REPO_ROOT, source), "utf8"),
+					),
+			);
 
 			assert.deepStrictEqual(unchecked, []);
 		});
@@ -908,6 +910,47 @@ describe("lint-types", function () {
 			const childProcess = await runLintTypes(REPO_ROOT);
 
 			assert.strictEqual(childProcess.stderr, "");
+		});
+
+		/*
+		 * `lib/rules/utils/ast-utils.js` is the vocabulary every rule file will
+		 * annotate against, so what it emits is a contract and not just a
+		 * by-product. Emitting the file at all proves nothing on its own: a
+		 * declaration file made entirely of `any` is exactly what a lost or
+		 * mistyped `@param` produces, and it satisfies every path- and
+		 * name-based assertion above while making the whole build worthless.
+		 */
+		it("emits a typed node vocabulary from the rules utility hub", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const declarations = fs.readFileSync(
+				path.join(OUT_DIR, "lib", "rules", "utils", "ast-utils.d.ts"),
+				"utf8",
+			);
+
+			// The names rule files will refer to as `import(...).ASTNode`.
+			assert.match(declarations, /^type ASTNode = \{$/mu);
+			assert.match(declarations, /^type Token = \{$/mu);
+
+			// A representative export, typed end to end.
+			assert.match(
+				declarations,
+				/isTokenOnSameLine\(left: Token, right: Token\): boolean;/u,
+			);
+
+			/*
+			 * The two index signatures on `ASTNode` and `Token` are the only
+			 * `any` the hub is meant to expose; they are what keeps
+			 * parser-specific fields readable without a cast.
+			 */
+			const untyped = declarations
+				.split("\n")
+				.filter(line => /: any\b/u.test(line))
+				.filter(line => !line.includes("[key: string]: any;"));
+
+			assert.deepStrictEqual(untyped, []);
 		});
 	});
 });
