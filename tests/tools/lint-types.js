@@ -795,6 +795,7 @@ describe("lint-types", function () {
 			"lib/config",
 			"lib/rules/utils",
 			"lib/linter/code-path-analysis",
+			"lib/languages",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
@@ -847,6 +848,15 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/linter/code-path-analysis/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/linter/code-path-analysis, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/languages", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/languages/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/languages, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1034,6 +1044,95 @@ describe("lint-types", function () {
 					.filter(line => /\bany\b/u.test(line))
 					.map(line => `${file}: ${line.trim()}`),
 			);
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * `SourceCode` and the token store are the surface every rule reads the
+		 * program through, so their declarations are a contract in the same way
+		 * the rules utility hub's are. And as there, emitting the files proves
+		 * nothing by itself: `strict` reports a *missing* type but never an
+		 * explicit `any` one, so a `.d.ts` full of `any` passes `lint:types`
+		 * while making the declarations worthless to every later bead.
+		 */
+		it("emits a typed source code surface for the JS language", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const moduleDir = path.join(OUT_DIR, "lib", "languages", "js");
+			const sourceCode = fs.readFileSync(
+				path.join(moduleDir, "source-code", "source-code.d.ts"),
+				"utf8",
+			);
+
+			/*
+			 * `getNodeByRangeIndex` is the canary for the whole file. Its
+			 * result is only ever assigned inside a traversal callback, which
+			 * tsc's control flow analysis cannot see, so without the explicit
+			 * annotation it infers the return type as bare `null` and every
+			 * caller has to cast through `unknown` to use it.
+			 */
+			assert.match(
+				sourceCode,
+				/^ {4}public getNodeByRangeIndex\(index: number\): ASTNode \| null;$/mu,
+			);
+
+			/*
+			 * The node vocabulary is shared with the rules layer rather than
+			 * redeclared here; a local copy would drift from it silently.
+			 */
+			assert.match(
+				sourceCode,
+				/^type ASTNode = import\("\.\.\/\.\.\/\.\.\/rules\/utils\/ast-utils\.js"\)\.ASTNode;$/mu,
+			);
+
+			/*
+			 * The token getters return `null` past the ends of the file. That
+			 * nullability is the single most load-bearing fact in this surface:
+			 * erasing it is what let the call sites in `ast-utils.js` read a
+			 * missing token unchecked for as long as these were `any`.
+			 */
+			const tokenStore = fs.readFileSync(
+				path.join(
+					moduleDir,
+					"source-code",
+					"token-store",
+					"index.d.ts",
+				),
+				"utf8",
+			);
+
+			assert.match(
+				tokenStore,
+				/^ {4}getTokenBefore\(node: NodeOrToken, options\?: CursorOptionsArgument\): Token \| Comment \| null;$/mu,
+			);
+			assert.match(
+				tokenStore,
+				/^ {4}getCommentsBefore\(nodeOrToken: NodeOrToken\): Array<Comment>;$/mu,
+			);
+
+			/*
+			 * Nothing in the language is typed `any`, with two exceptions that
+			 * are dropped by name rather than by pattern so that a third one
+			 * cannot appear unnoticed: the index signature that keeps
+			 * parser-specific fields readable without a cast, and the
+			 * module-private cache whose entries hold unrelated shapes.
+			 */
+			const untyped = filesUnder(moduleDir)
+				.flatMap(file =>
+					fs
+						.readFileSync(path.join(moduleDir, file), "utf8")
+						.split("\n")
+						.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+						.filter(line => /\bany\b/u.test(line))
+						.map(line => `${file}: ${line.trim()}`),
+				)
+				.filter(entry => !entry.endsWith("[key: string]: any;"))
+				.filter(
+					entry => !entry.endsWith("[caches]: Map<string, any>;"),
+				);
 
 			assert.deepStrictEqual(untyped, []);
 		});

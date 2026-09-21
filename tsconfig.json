@@ -12,6 +12,7 @@
     "lib/shared/**/*.js",
     "lib/config/**/*.js",
     "lib/rules/utils/**/*.js",
-    "lib/linter/code-path-analysis/**/*.js"
+    "lib/linter/code-path-analysis/**/*.js",
+    "lib/languages/**/*.js"
   ]
 }
