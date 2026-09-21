@@ -537,7 +537,73 @@ describe("lint-types", function () {
 		});
 	});
 
+	/*
+	 * `include` alone no longer decides what gets type-checked. lib/config
+	 * requires lib/rules and lib/languages, which drags the whole rule set into
+	 * the program, so whole-program `checkJs` would fail on hundreds of files
+	 * whose annotation beads have not landed. `checkJs` is therefore off and
+	 * each annotated file opts in with `// @ts-check`. These tests pin that
+	 * mechanism, because a file added to `include` without the directive is
+	 * still emitted and would otherwise look covered.
+	 */
+	describe("with checkJs disabled", () => {
+		/**
+		 * Builds a tsconfig.json that mirrors the repo's per-file opt-in setup.
+		 * @param {Array<string>} include The `include` array for the config.
+		 * @returns {Object} The tsconfig.json contents.
+		 */
+		function buildOptInTsconfig(include) {
+			return {
+				compilerOptions: { ...COMPILER_OPTIONS, checkJs: false },
+				include,
+			};
+		}
+
+		it("leaves a broken file unchecked without // @ts-check", async () => {
+			const projectDir = createProject(
+				"opt-in-absent",
+				buildOptInTsconfig(["src"]),
+				{ "src/bad.js": INVALID_SOURCE },
+			);
+
+			const childProcess = await runLintTypes(projectDir);
+
+			assert.strictEqual(childProcess.stderr, "");
+		});
+
+		it("checks the same file once it carries // @ts-check", async () => {
+			const projectDir = createProject(
+				"opt-in-present",
+				buildOptInTsconfig(["src"]),
+				{ "src/bad.js": `// @ts-check\n${INVALID_SOURCE}` },
+			);
+
+			await assert.rejects(
+				runLintTypes(projectDir),
+				({ code, stderr }) => {
+					assert.strictEqual(code, 1);
+					assert.match(stderr, /error TS2322/u);
+					return true;
+				},
+			);
+		});
+
+		it("still emits declarations for a file without // @ts-check", async () => {
+			const projectDir = createProject(
+				"opt-in-emit",
+				buildOptInTsconfig(["src"]),
+				{ "src/bad.js": INVALID_SOURCE },
+			);
+
+			await runLintTypes(projectDir, "--emit");
+
+			assert.deepStrictEqual(emittedFiles(projectDir), ["bad.d.ts"]);
+		});
+	});
+
 	describe("against the repository's own tsconfig.json", () => {
+		const CHECKED_DIRECTORIES = ["lib/shared", "lib/config"];
+
 		it("type-checks lib/shared", () => {
 			assert.ok(
 				TSCONFIG_JSON.include.some(pattern =>
@@ -545,6 +611,42 @@ describe("lint-types", function () {
 				),
 				`expected tsconfig.json 'include' to cover lib/shared, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
+		});
+
+		it("type-checks lib/config", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/config/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/config, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("opts every included source into checking with // @ts-check", () => {
+			assert.strictEqual(TSCONFIG_JSON.compilerOptions.checkJs, false);
+
+			const unchecked = [];
+
+			for (const directory of CHECKED_DIRECTORIES) {
+				const directoryPath = path.join(REPO_ROOT, directory);
+
+				for (const name of fs.readdirSync(directoryPath)) {
+					if (!name.endsWith(".js")) {
+						continue;
+					}
+
+					const source = fs.readFileSync(
+						path.join(directoryPath, name),
+						"utf8",
+					);
+
+					if (!/^\/\/ @ts-check$/mu.test(source)) {
+						unchecked.push(`${directory}/${name}`);
+					}
+				}
+			}
+
+			assert.deepStrictEqual(unchecked, []);
 		});
 
 		it("exits 0 in emit mode (build:types)", async () => {
@@ -560,11 +662,13 @@ describe("lint-types", function () {
 			const emitted = declarationFileNames(
 				path.join(REPO_ROOT, "dist", "types"),
 			);
-			const missing = fs
-				.readdirSync(path.join(REPO_ROOT, "lib", "shared"))
-				.filter(name => name.endsWith(".js"))
-				.map(name => `${path.basename(name, ".js")}.d.ts`)
-				.filter(name => !emitted.has(name));
+			const missing = CHECKED_DIRECTORIES.flatMap(directory =>
+				fs
+					.readdirSync(path.join(REPO_ROOT, directory))
+					.filter(name => name.endsWith(".js"))
+					.map(name => `${path.basename(name, ".js")}.d.ts`)
+					.filter(name => !emitted.has(name)),
+			);
 
 			assert.deepStrictEqual(missing, []);
 		});
