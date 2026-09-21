@@ -805,6 +805,7 @@ describe("lint-types", function () {
 			"lib/services",
 			"lib/eslint",
 			"lib/rule-tester",
+			"lib/cli-engine",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
@@ -907,6 +908,15 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/rule-tester/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/rule-tester, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/cli-engine", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/cli-engine/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/cli-engine, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1420,6 +1430,88 @@ describe("lint-types", function () {
 				.filter(line => /\bany\b/u.test(line))
 				.map(line => line.trim())
 				.filter(line => !ALLOWED.some(allowed => allowed.test(line)));
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * The legacy CLI engine is reached through the `./use-at-your-own-risk`
+		 * entry point, and its built-in formatters are the worked example every
+		 * custom formatter is written against. As everywhere else in this file,
+		 * emitting the declarations proves nothing on its own: `strict` reports
+		 * a *missing* type but never an explicit `any` one.
+		 */
+		it("emits a typed formatter signature and result cache for the CLI engine", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const moduleDir = path.join(OUT_DIR, "lib", "cli-engine");
+			const formattersDir = path.join(moduleDir, "formatters");
+
+			/*
+			 * All four built-ins are the same function shape, and that shape is
+			 * the contract a custom formatter is written against. Asserting it
+			 * once per file is what keeps the four from drifting apart.
+			 */
+			const METADATA_FORMATTERS = [
+				"html.d.ts",
+				"json-with-metadata.d.ts",
+				"stylish.d.ts",
+			];
+
+			for (const formatter of METADATA_FORMATTERS) {
+				assert.match(
+					fs.readFileSync(
+						path.join(formattersDir, formatter),
+						"utf8",
+					),
+					/^declare function _exports\(results: Array<LintResult>, data\?: FormatterData\): string;$/mu,
+					`expected ${formatter} to declare the formatter signature`,
+				);
+			}
+
+			// `json` is the one built-in that reads no metadata at all.
+			assert.match(
+				fs.readFileSync(path.join(formattersDir, "json.d.ts"), "utf8"),
+				/^declare function _exports\(results: Array<LintResult>\): string;$/mu,
+			);
+
+			/*
+			 * A cache hit has to stay distinguishable from a miss, so the two
+			 * absent cases remain in the return type rather than collapsing
+			 * into the result.
+			 */
+			assert.match(
+				fs.readFileSync(
+					path.join(moduleDir, "lint-result-cache.d.ts"),
+					"utf8",
+				),
+				/^ {4}getCachedLintResults\(filePath: string, config: object\): LintResult \| null \| undefined;$/mu,
+			);
+
+			/*
+			 * Nothing on this surface is plugin-supplied, so unlike `lib/linter`
+			 * and `lib/eslint` there is no file to exempt here: an `any` anywhere
+			 * in this module would be a lost annotation.
+			 */
+			const DECLARATIONS = [
+				path.join(moduleDir, "hash.d.ts"),
+				path.join(moduleDir, "lint-result-cache.d.ts"),
+				path.join(formattersDir, "json.d.ts"),
+				...METADATA_FORMATTERS.map(formatter =>
+					path.join(formattersDir, formatter),
+				),
+			];
+
+			const untyped = DECLARATIONS.flatMap(file =>
+				fs
+					.readFileSync(file, "utf8")
+					.split("\n")
+					.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+					.filter(line => /\bany\b/u.test(line))
+					.map(line => `${path.basename(file)}: ${line.trim()}`),
+			);
 
 			assert.deepStrictEqual(untyped, []);
 		});
