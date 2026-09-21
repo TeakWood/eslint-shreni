@@ -24,6 +24,7 @@ const REPO_ROOT = path.resolve(__dirname, "../..");
 const LINT_TYPES = path.join(REPO_ROOT, "tools", "lint-types.js");
 const TSC = require.resolve("typescript/bin/tsc");
 const PACKAGE_JSON = require(path.join(REPO_ROOT, "package.json"));
+const TSCONFIG_JSON = require(path.join(REPO_ROOT, "tsconfig.json"));
 
 /**
  * Base compiler options mirroring the repo's tsconfig.json. `rootDir` is set
@@ -131,6 +132,35 @@ function emittedFiles(projectDir) {
 	const outDir = path.join(projectDir, "dist", "types");
 
 	return fs.existsSync(outDir) ? fs.readdirSync(outDir) : [];
+}
+
+/**
+ * Lists the names of every declaration file under a directory tree. tsc picks
+ * the output layout from the common root of the compiled files, so the tree
+ * shape is not fixed and only the file names are compared.
+ * @param {string} dir The directory to walk.
+ * @returns {Set<string>} The declaration file names found, empty if `dir` does not exist.
+ */
+function declarationFileNames(dir) {
+	const names = new Set();
+
+	if (!fs.existsSync(dir)) {
+		return names;
+	}
+
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		if (entry.isDirectory()) {
+			for (const name of declarationFileNames(
+				path.join(dir, entry.name),
+			)) {
+				names.add(name);
+			}
+		} else if (entry.name.endsWith(".d.ts")) {
+			names.add(entry.name);
+		}
+	}
+
+	return names;
 }
 
 const VALID_SOURCE = `/**
@@ -508,10 +538,35 @@ describe("lint-types", function () {
 	});
 
 	describe("against the repository's own tsconfig.json", () => {
+		it("type-checks lib/shared", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/shared/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/shared, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
 		it("exits 0 in emit mode (build:types)", async () => {
 			const childProcess = await runLintTypes(REPO_ROOT, "--emit");
 
 			assert.strictEqual(childProcess.stderr, "");
+
+			/*
+			 * Exit 0 would also hold if `include` matched no files at all, so
+			 * assert that every annotated source really was compiled rather
+			 * than trusting the exit code on its own.
+			 */
+			const emitted = declarationFileNames(
+				path.join(REPO_ROOT, "dist", "types"),
+			);
+			const missing = fs
+				.readdirSync(path.join(REPO_ROOT, "lib", "shared"))
+				.filter(name => name.endsWith(".js"))
+				.map(name => `${path.basename(name, ".js")}.d.ts`)
+				.filter(name => !emitted.has(name));
+
+			assert.deepStrictEqual(missing, []);
 		});
 
 		it("exits 0 in no-emit mode (lint:types)", async () => {

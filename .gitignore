@@ -31,6 +31,9 @@ yarn.lock
 package-lock.json
 pnpm-lock.yaml
 
+# Emitted type declarations (see tsconfig.json "outDir")
+/dist
+
 # Docs site
 _site
 /docs/src/assets/css
