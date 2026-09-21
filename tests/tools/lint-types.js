@@ -105,6 +105,24 @@ async function runTsc(cwd, ...args) {
 }
 
 /**
+ * Runs tsc directly and captures the outcome whether or not it failed, so a
+ * test can compare the wrapper's report against tsc's own words.
+ * @param {string} cwd The directory to run in; tsc reads its tsconfig.json.
+ * @param {...string} args Arguments to pass to tsc.
+ * @returns {Promise<{code: number, output: string}>} The exit code and tsc's
+ *      combined output, concatenated in the order the wrapper concatenates it.
+ */
+async function tscOutcome(cwd, ...args) {
+	try {
+		const { stdout, stderr } = await runTsc(cwd, ...args);
+
+		return { code: 0, output: stdout + stderr };
+	} catch (error) {
+		return { code: error.code, output: error.stdout + error.stderr };
+	}
+}
+
+/**
  * Lists the declaration files emitted into a project's output directory.
  * @param {string} projectDir The project directory.
  * @returns {Array<string>} Emitted file names, empty if nothing was emitted.
@@ -137,6 +155,21 @@ function broken(n) {
 }
 
 module.exports = { broken };
+`;
+
+/*
+ * tsc explains a nested mismatch over three lines, only the first of which
+ * matches `error TS`. Reporting just the lines that survive the wrapper's
+ * filter would therefore still name the right error code while discarding the
+ * explanation of why the two types are incompatible.
+ */
+const ELABORATED_SOURCE = `/** @type {{a: number}} */
+const source = { a: 1 };
+
+/** @type {{a: string}} */
+const target = source;
+
+module.exports = { target };
 `;
 
 //------------------------------------------------------------------------------
@@ -237,6 +270,26 @@ describe("lint-types", function () {
 	});
 
 	describe("with a real type error", () => {
+		/*
+		 * Pins the premise of this block: the fixture fails with an error that
+		 * is not TS18003, which is precisely the case the suppression must not
+		 * swallow. It also records that tsc signals failure with exit code 2,
+		 * making the wrapper's normalisation to 1 a deliberate assertion below
+		 * rather than a coincidence.
+		 */
+		it("is a case where tsc itself fails with a non-TS18003 error", async () => {
+			const projectDir = createProject(
+				"real-premise",
+				buildTsconfig(["src"]),
+				{ "src/bad.js": INVALID_SOURCE },
+			);
+			const { code, output } = await tscOutcome(projectDir, "--noEmit");
+
+			assert.strictEqual(code, 2);
+			assert.match(output, /error TS2322/u);
+			assert.doesNotMatch(output, /error TS18003/u);
+		});
+
 		it("exits 1 and reports the error in emit mode", async () => {
 			const projectDir = createProject(
 				"invalid-emit",
@@ -269,6 +322,80 @@ describe("lint-types", function () {
 					return true;
 				},
 			);
+		});
+
+		/*
+		 * The filter decides the exit code; it must not decide what the
+		 * developer is shown. Matching a single `error TS2322` cannot tell the
+		 * two apart, because a wrapper reporting only the lines that failed the
+		 * filter would still print that code. These fixtures separate them: a
+		 * nested mismatch adds continuation lines that no `error TS` filter
+		 * would keep, and a second failing file proves every error survives.
+		 */
+		describe("spanning several lines and several files", () => {
+			/**
+			 * Creates a project whose errors span continuation lines and files.
+			 * @param {string} name Directory name, unique within the temp directory.
+			 * @returns {string} The absolute path of the created project directory.
+			 */
+			function createElaboratedProject(name) {
+				return createProject(name, buildTsconfig(["src"]), {
+					"src/bad.js": ELABORATED_SOURCE,
+					"src/other.js": INVALID_SOURCE,
+				});
+			}
+
+			/**
+			 * Asserts the wrapper failed and reproduced tsc's report in full.
+			 * @param {{code: number, stdout: string, stderr: string}} rejection The rejection value.
+			 * @param {string} expected tsc's own combined output for the same project.
+			 * @returns {boolean} Always `true`, so `assert.rejects` accepts it.
+			 */
+			function assertForwardsVerbatim(
+				{ code, stdout, stderr },
+				expected,
+			) {
+				assert.strictEqual(code, 1);
+				assert.strictEqual(stdout, "");
+				assert.strictEqual(stderr, expected);
+
+				/*
+				 * Spelled out as well as compared, so a regression reports
+				 * which part of the message went missing rather than only that
+				 * two long strings differ.
+				 */
+				assert.match(stderr, /error TS2322/u);
+				assert.match(
+					stderr,
+					/ {2}Types of property 'a' are incompatible\./u,
+				);
+				assert.match(stderr, /other\.js/u);
+				return true;
+			}
+
+			it("writes tsc's whole report to stderr in no-emit mode", async () => {
+				const projectDir = createElaboratedProject("elaborated-noemit");
+				const expected = await tscOutcome(projectDir, "--noEmit");
+
+				assert.strictEqual(expected.code, 2);
+
+				await assert.rejects(runLintTypes(projectDir), rejection =>
+					assertForwardsVerbatim(rejection, expected.output),
+				);
+			});
+
+			it("writes tsc's whole report to stderr in emit mode", async () => {
+				const projectDir = createElaboratedProject("elaborated-emit");
+				const expected = await tscOutcome(projectDir);
+
+				assert.strictEqual(expected.code, 2);
+
+				await assert.rejects(
+					runLintTypes(projectDir, "--emit"),
+					rejection =>
+						assertForwardsVerbatim(rejection, expected.output),
+				);
+			});
 		});
 	});
 
