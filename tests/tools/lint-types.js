@@ -802,6 +802,8 @@ describe("lint-types", function () {
 			 */
 			"lib/linter",
 			"lib/languages",
+			"lib/services",
+			"lib/eslint",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
@@ -877,6 +879,24 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/languages/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/languages, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/services", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/services/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/services, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/eslint", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/eslint/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/eslint, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1232,6 +1252,85 @@ describe("lint-types", function () {
 					.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
 					.filter(line => /\bany\b/u.test(line))
 					.map(line => `${file}: ${line.trim()}`),
+			);
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		it("emits a typed public API for the ESLint class and its services", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const eslintDir = path.join(OUT_DIR, "lib", "eslint");
+			const servicesDir = path.join(OUT_DIR, "lib", "services");
+			const eslintDeclarations = fs.readFileSync(
+				path.join(eslintDir, "eslint.d.ts"),
+				"utf8",
+			);
+
+			/*
+			 * `lintFiles()` and `lintText()` are the two entry points every
+			 * integration goes through. Their results being arrays of
+			 * `LintResult` rather than `any` is the fact those consumers
+			 * actually depend on.
+			 */
+			assert.match(
+				eslintDeclarations,
+				/^ {4}lintFiles\(patterns: string \| Array<string>\): Promise<Array<LintResult>>;$/mu,
+			);
+			assert.match(
+				eslintDeclarations,
+				/^ {8}warnIgnored\?: boolean \| undefined;\n {4}\}\): Promise<Array<LintResult>>;$/mu,
+			);
+
+			/*
+			 * A formatter is handed the results and must give back text. Both
+			 * ends of that contract live in this one signature.
+			 */
+			assert.match(
+				eslintDeclarations,
+				/^ {8}format\(results: Array<LintResult>, resultsMeta\?: Object\): string \| Promise<string>;$/mu,
+			);
+
+			/*
+			 * Suppressions are counted per rule per file, and `applySuppressions`
+			 * returns both the filtered results and whatever went unused. Naming
+			 * `Suppressions` at both ends is what keeps the file format checkable.
+			 */
+			assert.match(
+				fs.readFileSync(
+					path.join(servicesDir, "suppressions-service.d.ts"),
+					"utf8",
+				),
+				/^ {4}applySuppressions\(results: Array<LintResult>, suppressions: Suppressions\): \{\n {8}results: Array<LintResult>;\n {8}unused: Suppressions;\n {4}\};$/mu,
+			);
+
+			/*
+			 * `any` is unavoidable in two of these files: a language, its
+			 * `languageOptions` and the source code object it builds all come
+			 * from a plugin, and the `ESLint` constructor options are validated
+			 * at runtime by `processOptions()` rather than by their type. The
+			 * scan therefore covers the files with no plugin-supplied shape in
+			 * their surface, where an `any` would be a lost annotation rather
+			 * than a modelling decision.
+			 */
+			const CLOSED_SURFACES = [
+				path.join(eslintDir, "eslint.d.ts"),
+				path.join(eslintDir, "index.d.ts"),
+				path.join(eslintDir, "worker.d.ts"),
+				path.join(servicesDir, "processor-service.d.ts"),
+				path.join(servicesDir, "suppressions-service.d.ts"),
+				path.join(servicesDir, "warning-service.d.ts"),
+			];
+
+			const untyped = CLOSED_SURFACES.flatMap(file =>
+				fs
+					.readFileSync(file, "utf8")
+					.split("\n")
+					.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+					.filter(line => /\bany\b/u.test(line))
+					.map(line => `${path.basename(file)}: ${line.trim()}`),
 			);
 
 			assert.deepStrictEqual(untyped, []);

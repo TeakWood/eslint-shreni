@@ -14,6 +14,8 @@
     "lib/rules/utils/**/*.js",
     "lib/linter/*.js",
     "lib/linter/code-path-analysis/**/*.js",
-    "lib/languages/**/*.js"
+    "lib/languages/**/*.js",
+    "lib/services/**/*.js",
+    "lib/eslint/**/*.js"
   ]
 }
