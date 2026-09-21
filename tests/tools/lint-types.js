@@ -804,6 +804,7 @@ describe("lint-types", function () {
 			"lib/languages",
 			"lib/services",
 			"lib/eslint",
+			"lib/rule-tester",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
@@ -897,6 +898,15 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/eslint/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/eslint, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		it("type-checks lib/rule-tester", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.some(pattern =>
+					pattern.startsWith("lib/rule-tester/"),
+				),
+				`expected tsconfig.json 'include' to cover lib/rule-tester, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1332,6 +1342,84 @@ describe("lint-types", function () {
 					.filter(line => /\bany\b/u.test(line))
 					.map(line => `${path.basename(file)}: ${line.trim()}`),
 			);
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * `RuleTester` is the surface plugin authors write against, so the
+		 * shape of a test case is as much a published contract as the class
+		 * itself. As everywhere else in this file, emitting the declarations
+		 * proves nothing on its own: `strict` reports a *missing* type but
+		 * never an explicit `any` one.
+		 */
+		it("emits a typed test-case vocabulary for RuleTester", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const moduleDir = path.join(OUT_DIR, "lib", "rule-tester");
+			const declarations = fs.readFileSync(
+				path.join(moduleDir, "rule-tester.d.ts"),
+				"utf8",
+			);
+
+			/*
+			 * `run()` is the entry point every rule test in every plugin goes
+			 * through. All three of its parameters being named types rather
+			 * than `any` is the fact those authors depend on.
+			 */
+			assert.match(
+				declarations,
+				/^ {4}run\(ruleName: string, rule: RuleModule, test: TestScenarios\): void;$/mu,
+			);
+
+			/*
+			 * A scenario is what an author actually writes, so the two case
+			 * shapes it is built from have to stay named at both ends.
+			 */
+			assert.match(
+				declarations,
+				/^ {4}valid: Array<ValidTestCase \| string>;\n {4}\/\*\*[\s\S]*?\*\/\n {4}invalid: Array<InvalidTestCase>;$/mu,
+			);
+			assert.match(
+				declarations,
+				/^type InvalidTestCase = ValidTestCase & \{\n {4}errors: Array<TestCaseError> \| number;\n\};$/mu,
+			);
+			assert.match(
+				declarations,
+				/^type TestCaseError = string \| RegExp \| TestCaseErrorObject;$/mu,
+			);
+
+			// The class reaches consumers through the directory's index.
+			assert.match(
+				fs.readFileSync(path.join(moduleDir, "index.d.ts"), "utf8"),
+				/^export \{ RuleTester \};$/mu,
+			);
+
+			/*
+			 * `any` is unavoidable on part of this surface, and the exceptions
+			 * are dropped by name rather than by pattern so that a new one
+			 * cannot appear unnoticed: a test framework contributes `describe`
+			 * and `it` of whatever shape it likes, and a tester config is an
+			 * arbitrary ESLint config validated at runtime rather than by its
+			 * type. Everything else here would be a lost annotation.
+			 */
+			const ALLOWED = [
+				/^static (?:get|set) (?:describe|it|itOnly)\((?:value: any)?\): any;?$/u,
+				/^static (?:get|set) (?:describe|it|itOnly)\(value: any\);$/u,
+				/^static setDefaultConfig\(config: Record<string, any>\): void;$/u,
+				/^static getDefaultConfig\(\): Record<string, any>;$/u,
+				/^constructor\(testerConfig\?: Record<string, any>\);$/u,
+				/^testerConfig: Array<Record<string, any>>;$/u,
+			];
+
+			const untyped = declarations
+				.split("\n")
+				.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+				.filter(line => /\bany\b/u.test(line))
+				.map(line => line.trim())
+				.filter(line => !ALLOWED.some(allowed => allowed.test(line)));
 
 			assert.deepStrictEqual(untyped, []);
 		});
