@@ -794,7 +794,13 @@ describe("lint-types", function () {
 			"lib/shared",
 			"lib/config",
 			"lib/rules/utils",
-			"lib/linter/code-path-analysis",
+
+			/*
+			 * Covers `code-path-analysis/` too. `include` reaches the two with
+			 * separate patterns, but the walk below recurses, so naming the
+			 * parent is enough and naming both would double-count it.
+			 */
+			"lib/linter",
 			"lib/languages",
 		];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
@@ -848,6 +854,20 @@ describe("lint-types", function () {
 					pattern.startsWith("lib/linter/code-path-analysis/"),
 				),
 				`expected tsconfig.json 'include' to cover lib/linter/code-path-analysis, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		/*
+		 * The engine's own files sit directly in `lib/linter`, which
+		 * `lib/linter/code-path-analysis/**` does not reach. The assertion is
+		 * on the exact pattern rather than a prefix because that is what
+		 * distinguishes the two: a prefix check would already pass on the
+		 * code-path-analysis pattern alone.
+		 */
+		it("type-checks lib/linter", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.includes("lib/linter/*.js"),
+				`expected tsconfig.json 'include' to cover lib/linter, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1133,6 +1153,86 @@ describe("lint-types", function () {
 				.filter(
 					entry => !entry.endsWith("[caches]: Map<string, any>;"),
 				);
+
+			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * The linting engine is where a rule's report becomes a `LintMessage`
+		 * and where a disable comment becomes a suppression. Those two shapes
+		 * cross nearly every module boundary in the repo, so they are the ones
+		 * worth pinning here — and, as everywhere else in this file, emitting
+		 * the declarations proves nothing on its own: `strict` reports a
+		 * *missing* type but never an explicit `any` one.
+		 */
+		it("emits a typed message pipeline for the linting engine", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const moduleDir = path.join(OUT_DIR, "lib", "linter");
+
+			/*
+			 * `verify()` is the public entry point. Its result being an array
+			 * of `LintMessage` rather than `any` is the single fact every
+			 * consumer of this package depends on.
+			 */
+			assert.match(
+				fs.readFileSync(path.join(moduleDir, "linter.d.ts"), "utf8"),
+				/^ {4}verify\(textOrSourceCode: string \| LinterSourceCode, config: any, filenameOrOptions\?: string \| VerifyOptions\): Array<LintMessage>;$/mu,
+			);
+
+			/*
+			 * Disable directives arrive unprocessed from the comment parser and
+			 * leave as ordinary problems. Keeping both ends named is what makes
+			 * the `disable-line` expansion in between checkable at all.
+			 */
+			assert.match(
+				fs.readFileSync(
+					path.join(moduleDir, "apply-disable-directives.d.ts"),
+					"utf8",
+				),
+				/^ {4}directives: Array<UnprocessedDirective>;$/mu,
+			);
+
+			/*
+			 * `applyFixes` is where a message's `fix` is actually consumed, so
+			 * its `shouldFix` overload is the one place the boolean and the
+			 * predicate forms have to stay distinguishable.
+			 */
+			assert.match(
+				fs.readFileSync(
+					path.join(moduleDir, "source-code-fixer.d.ts"),
+					"utf8",
+				),
+				/^declare function applyFixes\(sourceText: string, messages: Array<LintMessage>, shouldFix\?: boolean \| \(\(message: LintMessage\) => boolean\)\): FixReport;$/mu,
+			);
+
+			/*
+			 * `any` is unavoidable in parts of this module: languages and their
+			 * `languageOptions` come from plugins, and a rule listener takes
+			 * whatever its selector matched. The scan is therefore limited to
+			 * the helpers with no plugin-supplied shape in their surface, where
+			 * an `any` would be a lost annotation rather than a modelling
+			 * decision. `code-path-analysis/` has its own scan above.
+			 */
+			const CLOSED_SURFACES = [
+				"apply-disable-directives.d.ts",
+				"esquery.d.ts",
+				"interpolate.d.ts",
+				"rule-fixer.d.ts",
+				"source-code-fixer.d.ts",
+				"vfile.d.ts",
+			];
+
+			const untyped = CLOSED_SURFACES.flatMap(file =>
+				fs
+					.readFileSync(path.join(moduleDir, file), "utf8")
+					.split("\n")
+					.filter(line => !/^\s*(?:\/\/|\/?\*)/u.test(line))
+					.filter(line => /\bany\b/u.test(line))
+					.map(line => `${file}: ${line.trim()}`),
+			);
 
 			assert.deepStrictEqual(untyped, []);
 		});
