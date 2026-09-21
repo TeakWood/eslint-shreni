@@ -135,32 +135,54 @@ function emittedFiles(projectDir) {
 }
 
 /**
- * Lists the names of every declaration file under a directory tree. tsc picks
- * the output layout from the common root of the compiled files, so the tree
- * shape is not fixed and only the file names are compared.
+ * Lists every file under a directory tree, as paths relative to it.
  * @param {string} dir The directory to walk.
- * @returns {Set<string>} The declaration file names found, empty if `dir` does not exist.
+ * @param {string} [prefix] The relative path of `dir`, used when recursing.
+ * @returns {Array<string>} Slash-separated relative paths, empty if `dir` does not exist.
  */
-function declarationFileNames(dir) {
-	const names = new Set();
+function filesUnder(dir, prefix = "") {
+	const paths = [];
 
 	if (!fs.existsSync(dir)) {
-		return names;
+		return paths;
 	}
 
 	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+
 		if (entry.isDirectory()) {
-			for (const name of declarationFileNames(
-				path.join(dir, entry.name),
-			)) {
-				names.add(name);
-			}
-		} else if (entry.name.endsWith(".d.ts")) {
-			names.add(entry.name);
+			paths.push(...filesUnder(path.join(dir, entry.name), relativePath));
+		} else {
+			paths.push(relativePath);
 		}
 	}
 
-	return names;
+	return paths;
+}
+
+/**
+ * Reports which of the given sources had no declaration emitted for them.
+ *
+ * Paths are matched by suffix rather than by file name. tsc roots the output
+ * tree at the common root of the compiled files, so the leading segments are
+ * not fixed, while comparing bare names would let an unrelated declaration
+ * stand in for a missing one — `lib/shared/ast-utils.js` and
+ * `lib/rules/utils/ast-utils.js` both emit an `ast-utils.d.ts`.
+ * @param {Array<string>} emitted Slash-separated paths of the emitted files.
+ * @param {Array<string>} sources Slash-separated repo-relative source paths.
+ * @returns {Array<string>} The expected declaration paths that are absent.
+ */
+function missingDeclarations(emitted, sources) {
+	return sources
+		.map(source => source.replace(/\.js$/u, ".d.ts"))
+		.filter(
+			declaration =>
+				!emitted.some(
+					file =>
+						file === declaration ||
+						file.endsWith(`/${declaration}`),
+				),
+		);
 }
 
 const VALID_SOURCE = `/**
@@ -296,6 +318,89 @@ describe("lint-types", function () {
 
 			assert.strictEqual(childProcess.stderr, "");
 			assert.deepStrictEqual(emittedFiles(projectDir), []);
+		});
+	});
+
+	/*
+	 * The empty-include block pins what happens while nothing is compiled.
+	 * These pin the other end, which is the point of the gate: once `include`
+	 * names real sources, `build:types` must put declarations — and only
+	 * declarations — under `outDir`. Exit code 0 cannot tell that apart from a
+	 * build that emitted nothing, so every assertion here is filesystem state.
+	 */
+	describe("with a non-empty include array", () => {
+		/**
+		 * Creates a project whose sources sit at two depths, so the shape of
+		 * the emitted tree can be compared and not merely its size.
+		 * @param {string} name Directory name, unique within the temp directory.
+		 * @returns {string} The absolute path of the created project directory.
+		 */
+		function createEmitProject(name) {
+			return createProject(name, buildTsconfig(["src"]), {
+				"src/ok.js": VALID_SOURCE,
+				"src/nested/deep.js": VALID_SOURCE,
+			});
+		}
+
+		it("mirrors the source tree under outDir", async () => {
+			const projectDir = createEmitProject("emit-layout");
+
+			await runLintTypes(projectDir, "--emit");
+
+			assert.deepStrictEqual(
+				filesUnder(path.join(projectDir, "dist", "types"))
+					.filter(file => file.endsWith(".d.ts"))
+					.sort(),
+				["nested/deep.d.ts", "ok.d.ts"],
+			);
+		});
+
+		/*
+		 * Without `emitDeclarationOnly`, `declaration: true` still writes every
+		 * `.d.ts` above — tsc just compiles the sources to JavaScript beside
+		 * them. Only looking for what should be absent catches that.
+		 */
+		it("emits declarations only, never JavaScript", async () => {
+			const projectDir = createEmitProject("emit-declarations-only");
+
+			await runLintTypes(projectDir, "--emit");
+
+			assert.deepStrictEqual(
+				filesUnder(path.join(projectDir, "dist", "types")).filter(
+					file => !file.endsWith(".d.ts"),
+				),
+				[],
+			);
+		});
+
+		it("leaves the sources alongside no declarations of their own", async () => {
+			const projectDir = createEmitProject("emit-source-tree");
+
+			await runLintTypes(projectDir, "--emit");
+
+			assert.deepStrictEqual(
+				filesUnder(path.join(projectDir, "src")).sort(),
+				["nested/deep.js", "ok.js"],
+			);
+		});
+
+		/*
+		 * A declaration file that exists but describes nothing would satisfy
+		 * every assertion above while making the whole build worthless, so
+		 * check that the JSDoc annotations actually reached the output.
+		 */
+		it("carries the JSDoc types into the declaration", async () => {
+			const projectDir = createEmitProject("emit-contents");
+
+			await runLintTypes(projectDir, "--emit");
+
+			assert.match(
+				fs.readFileSync(
+					path.join(projectDir, "dist", "types", "ok.d.ts"),
+					"utf8",
+				),
+				/export function addOne\(n: number\): number;/u,
+			);
 		});
 	});
 
@@ -603,6 +708,20 @@ describe("lint-types", function () {
 
 	describe("against the repository's own tsconfig.json", () => {
 		const CHECKED_DIRECTORIES = ["lib/shared", "lib/config"];
+		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
+
+		/**
+		 * Lists the sources the repo has opted into type-checking.
+		 * @returns {Array<string>} Slash-separated repo-relative paths.
+		 */
+		function checkedSources() {
+			return CHECKED_DIRECTORIES.flatMap(directory =>
+				fs
+					.readdirSync(path.join(REPO_ROOT, directory))
+					.filter(name => name.endsWith(".js"))
+					.map(name => `${directory}/${name}`),
+			);
+		}
 
 		it("type-checks lib/shared", () => {
 			assert.ok(
@@ -649,28 +768,57 @@ describe("lint-types", function () {
 			assert.deepStrictEqual(unchecked, []);
 		});
 
+		/*
+		 * Where the declarations go is the build's contract with its
+		 * consumers, and the test below hardcodes `dist/types` to check it.
+		 * Pinning the options here turns a change to any of them into a
+		 * failure that names the option rather than a puzzling report of
+		 * declarations gone missing.
+		 */
+		it("is configured to emit declarations to dist/types", () => {
+			const { compilerOptions } = TSCONFIG_JSON;
+
+			assert.strictEqual(compilerOptions.declaration, true);
+			assert.strictEqual(compilerOptions.emitDeclarationOnly, true);
+			assert.strictEqual(
+				compilerOptions.outDir,
+				path.posix.join("dist", "types"),
+			);
+		});
+
 		it("exits 0 in emit mode (build:types)", async () => {
+			/*
+			 * dist/ is gitignored build output that survives between runs, so
+			 * a tree left by an earlier build would satisfy everything below
+			 * even if this run emitted nothing at all. Start from nothing.
+			 */
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
 			const childProcess = await runLintTypes(REPO_ROOT, "--emit");
 
 			assert.strictEqual(childProcess.stderr, "");
+
+			const emitted = filesUnder(OUT_DIR);
 
 			/*
 			 * Exit 0 would also hold if `include` matched no files at all, so
 			 * assert that every annotated source really was compiled rather
 			 * than trusting the exit code on its own.
 			 */
-			const emitted = declarationFileNames(
-				path.join(REPO_ROOT, "dist", "types"),
-			);
-			const missing = CHECKED_DIRECTORIES.flatMap(directory =>
-				fs
-					.readdirSync(path.join(REPO_ROOT, directory))
-					.filter(name => name.endsWith(".js"))
-					.map(name => `${path.basename(name, ".js")}.d.ts`)
-					.filter(name => !emitted.has(name)),
+			assert.deepStrictEqual(
+				missingDeclarations(emitted, checkedSources()),
+				[],
 			);
 
-			assert.deepStrictEqual(missing, []);
+			/*
+			 * `emitDeclarationOnly` is what keeps this a types build. Without
+			 * it tsc also writes a compiled copy of every source it reaches,
+			 * which is a second, silently diverging lib/ inside dist/.
+			 */
+			assert.deepStrictEqual(
+				emitted.filter(file => !file.endsWith(".d.ts")),
+				[],
+			);
 		});
 
 		it("exits 0 in no-emit mode (lint:types)", async () => {
