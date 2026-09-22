@@ -21,6 +21,17 @@ const { promisify } = require("node:util");
 //------------------------------------------------------------------------------
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
+
+/*
+ * tsc prints every path with forward slashes on every platform, because it
+ * normalizes each `SourceFile.fileName` through `normalizeSlashes()`. On
+ * Windows `path.join` yields backslashes instead, so comparing a `--listFiles`
+ * line against a `path.join` result misses for every file. Anything matching
+ * tsc's output exactly needs this root rather than `REPO_ROOT`; on POSIX the
+ * two are the same string.
+ */
+const REPO_ROOT_SLASHES = REPO_ROOT.replaceAll(path.sep, "/");
+
 const LINT_TYPES = path.join(REPO_ROOT, "tools", "lint-types.js");
 const TSC = require.resolve("typescript/bin/tsc");
 const PACKAGE_JSON = require(path.join(REPO_ROOT, "package.json"));
@@ -787,6 +798,95 @@ describe("lint-types", function () {
 
 			assert.deepStrictEqual(emittedFiles(projectDir), ["bad.d.ts"]);
 		});
+
+		/*
+		 * `include` does not bound what tsc checks. Every module reached by a
+		 * `require()` from an included file joins the program, and with
+		 * `checkJs` off it is `// @ts-check` alone that decides whether a
+		 * member of the program is checked.
+		 *
+		 * That split is what lets `lib/rules/` be annotated file by file
+		 * without anyone touching `tsconfig.json`: `lib/config/` is included,
+		 * it requires `../rules`, and that index pulls in every rule. Nothing
+		 * else pins the two halves apart, so they are pinned here — if this
+		 * stopped holding, each annotation would land silently unchecked and
+		 * `lint:types` would stay green the whole way.
+		 */
+		describe("for a file reached only through the require graph", () => {
+			/**
+			 * Builds a miniature of the repo's config/rules relationship: an
+			 * included entry point requiring a rule index, which names its
+			 * rules in lazy thunks exactly as `lib/rules/index.js` does.
+			 * @param {string} ruleSource Contents of the required rule file.
+			 * @param {Object<string, string>} [extraFiles] Further files to write.
+			 * @returns {Object<string, string>} Source paths mapped to contents.
+			 */
+			function buildRuleTree(ruleSource, extraFiles = {}) {
+				return {
+					"src/config.js": `"use strict";\nmodule.exports = require("./rules");\n`,
+					"src/rules/index.js": `"use strict";\nmodule.exports = new Map(Object.entries({\n\t"bad-rule": () => require("./bad-rule"),\n}));\n`,
+					"src/rules/bad-rule.js": ruleSource,
+					...extraFiles,
+				};
+			}
+
+			it("checks it once it carries // @ts-check, with no include entry", async () => {
+				const projectDir = createProject(
+					"require-graph-checked",
+					buildOptInTsconfig(["src/config.js"]),
+					buildRuleTree(`// @ts-check\n${INVALID_SOURCE}`),
+				);
+
+				await assert.rejects(
+					runLintTypes(projectDir),
+					({ code, stderr }) => {
+						assert.strictEqual(code, 1);
+						assert.match(stderr, /error TS2322/u);
+
+						/*
+						 * The error is reported against the rule file, not the
+						 * included entry point that dragged it in.
+						 */
+						assert.match(stderr, /bad-rule\.js/u);
+						return true;
+					},
+				);
+			});
+
+			it("leaves it unchecked without the directive", async () => {
+				const projectDir = createProject(
+					"require-graph-unchecked",
+					buildOptInTsconfig(["src/config.js"]),
+					buildRuleTree(INVALID_SOURCE),
+				);
+
+				const childProcess = await runLintTypes(projectDir);
+
+				assert.strictEqual(childProcess.stderr, "");
+			});
+
+			/*
+			 * The other half of the claim, and the one that makes the first
+			 * test mean something: the directive is not what puts a file in
+			 * the program. A sibling of the checked rule, identical but for
+			 * being required by nobody, carries the same directive and the
+			 * same error and is passed over in silence. Membership comes from
+			 * the require graph; only the checking is opt-in.
+			 */
+			it("ignores the directive on a file nothing requires", async () => {
+				const projectDir = createProject(
+					"require-graph-orphan",
+					buildOptInTsconfig(["src/config.js"]),
+					buildRuleTree(VALID_SOURCE, {
+						"src/rules/orphan-rule.js": `// @ts-check\n${INVALID_SOURCE}`,
+					}),
+				);
+
+				const childProcess = await runLintTypes(projectDir);
+
+				assert.strictEqual(childProcess.stderr, "");
+			});
+		});
 	});
 
 	describe("against the repository's own tsconfig.json", () => {
@@ -824,6 +924,46 @@ describe("lint-types", function () {
 					.map(file => `${directory}/${file}`),
 			);
 		}
+
+		/*
+		 * The rule files are the one tree annotated without an `include` entry
+		 * of its own, so the fixtures above are exercised here against the real
+		 * thing. `lib/config/default-config.js` requires `../rules`, and that
+		 * index names every rule, which is what puts all of them in the program
+		 * while `include` still says nothing about them.
+		 *
+		 * The lazy `() => require("./rule")` thunks are worth a word, because
+		 * they look like they should defeat this: tsc resolves a `require()`
+		 * with a string literal argument syntactically, so the call never has
+		 * to run for the module to join the program.
+		 */
+		it("reaches every rule file through the require graph", async () => {
+			const { stdout } = await runTsc(
+				REPO_ROOT,
+				"--noEmit",
+				"--listFiles",
+			);
+			const inProgram = new Set(
+				stdout.split("\n").map(line => line.trim()),
+			);
+			const ruleFiles = filesUnder(path.join(REPO_ROOT, "lib", "rules"))
+				.filter(file => file.endsWith(".js"))
+				.filter(file => !file.includes("/"));
+
+			// Guards against the filter above quietly matching nothing.
+			assert.ok(ruleFiles.length > 250, `found ${ruleFiles.length}`);
+
+			const absent = ruleFiles.filter(
+				file =>
+					!inProgram.has(`${REPO_ROOT_SLASHES}/lib/rules/${file}`),
+			);
+
+			assert.deepStrictEqual(
+				absent,
+				[],
+				`expected every rule file to be in the tsc program, but ${absent.length} were absent: ${JSON.stringify(absent.slice(0, 5))}`,
+			);
+		});
 
 		it("type-checks lib/shared", () => {
 			assert.ok(

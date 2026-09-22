@@ -87,24 +87,41 @@ the stated reason is not. Do not "fix" those thunks into eager requires on the
 belief that type-checking depends on it, and do not doubt the mechanism on
 seeing them.
 
-Confirmed on the baseline with a two-arm probe on `lib/rules/no-debugger.js`,
-injecting `/** @type {number} */ const PROBE_ARM = "definitely a string";`:
+Re-confirmed by bead `.1` on the baseline, independently of the epic's original
+probe and on a different file, `lib/rules/no-continue.js`. The directive was
+added alone — no other edit, and `git diff --stat tsconfig.json` empty:
 
-| Arm         | `// @ts-check` | `tsconfig.json` | `node tools/lint-types.js`              |
-| ----------- | -------------- | --------------- | --------------------------------------- |
-| A (control) | absent         | untouched       | silent, exit 0                          |
-| B           | present        | untouched       | `TS2322` at the probe, plus `TS7006` ×2 |
+| Arm         | `// @ts-check` | In require graph | `node tools/lint-types.js` |
+| ----------- | -------------- | ---------------- | -------------------------- |
+| A (control) | absent         | yes              | silent, exit 0             |
+| B           | present        | yes              | `TS7006` ×2, exit 1        |
+| C (control) | present        | **no**           | silent, exit 0             |
 
 Arm B's exact output:
 
 ```
-lib/rules/no-debugger.js(11,7): error TS2322: Type 'string' is not assignable to type 'number'.
-lib/rules/no-debugger.js(36,9): error TS7006: Parameter 'context' implicitly has an 'any' type.
-lib/rules/no-debugger.js(38,22): error TS7006: Parameter 'node' implicitly has an 'any' type.
+lib/rules/no-continue.js(32,9): error TS7006: Parameter 'context' implicitly has an 'any' type.
+lib/rules/no-continue.js(34,22): error TS7006: Parameter 'node' implicitly has an 'any' type.
 ```
 
-The directive alone flips checking on, with `include` untouched. Arm A rules out
-"it was being checked all along".
+**The claim holds.** The directive alone flips checking on, with `include`
+untouched.
+
+Arm C is new in `.1` and is the arm that makes the other two mean something. A
+file dropped into `lib/rules/` that nothing requires carries the same directive
+and a blatant `TS2322`, and is passed over in silence — `tsc --listFiles` does
+not list it at all. So the directive is **not** what puts a file in the program;
+it only decides whether a member of the program is checked. Membership comes
+from the require graph, and `lib/rules/no-continue.js` is already in it on the
+baseline — `tsc --listFiles` reports 305 files under `lib/rules/` with no rule
+annotated and no `include` entry naming them.
+
+This is no longer a one-off probe. `tests/tools/lint-types.js` now pins all
+three arms on hermetic fixtures, under _"for a file reached only through the
+require graph"_, plus one assertion against the real tree — _"reaches every rule
+file through the require graph"_ — so that a future change severing
+`lib/config` → `lib/rules` fails loudly instead of letting 20 beads of
+annotation land silently unchecked while `lint:types` stays green.
 
 ### Rule declarations are _already_ emitted
 
@@ -270,12 +287,22 @@ running them.
 
 ### On the `.1` spike
 
-`.1` asks for exactly the probe reproduced above, and its other two questions are
-also settled here: `include` has no `lib/rules/*.js` entry beyond
-`lib/rules/utils/**`, and `CHECKED_DIRECTORIES` lists `lib/rules/utils`, not
-`lib/rules` — so the guard does not assert over rule files during rollout and
-needs no change until `.22`. Whoever picks `.1` up should confirm rather than
-re-derive, and can go straight to R01 if it reproduces.
+**`.1` is done and the claim reproduced — R01 is clear to start.** The probe
+above carries its result, with a third arm `.1` added.
+
+Its other two questions are settled by measurement rather than by reading:
+`include`'s only `lib/rules` entry is `lib/rules/utils/**/*.js`, and
+`CHECKED_DIRECTORIES` lists `lib/rules/utils`, which is a _descendant_ of
+`lib/rules` and so cannot stand in for it. Running the guard's own
+`checkedSources()` over the current tree returns 90 files, **zero** of them a
+top-level `lib/rules/*.js`. The guard therefore does not assert over rule files
+during rollout and **needs no change until `.22`** — the 20 annotation beads can
+leave `tests/tools/lint-types.js` alone, as their acceptance criteria require.
+
+The corollary for `.22`, unchanged by this spike: adding `lib/rules/**/*.js` to
+`include` without also adding `"lib/rules"` to `CHECKED_DIRECTORIES` leaves the
+completeness gate disarmed. The _"walks every directory that `include` reaches"_
+test is what catches that, and it fails naming `["lib/rules"]`.
 
 ## Epic tracking (`iti`) — do not implement directly
 
