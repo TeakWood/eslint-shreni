@@ -1,8 +1,8 @@
 ---
 title: First-party TypeScript declarations via JSDoc annotations
-status: accepted
+status: superseded
 date: 2026-09-21
-superseded-by:
+superseded-by: 2026-09-22-rules-annotation-resplit.md
 epic: eslint-shreni-beads-yd9
 ---
 
