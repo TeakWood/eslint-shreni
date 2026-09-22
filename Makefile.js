@@ -67,6 +67,7 @@ const NODE = "node ", // intentional extra space
 	NODE_MODULES = "./node_modules/",
 	TEMP_DIR = "./tmp/",
 	DEBUG_DIR = "./debug/",
+	COVERAGE_DIR = "coverage",
 	BUILD_DIR = "build",
 	SITE_DIR = "../eslint.org",
 	DOCS_DIR = "./docs",
@@ -602,26 +603,59 @@ target.fuzz = function ({ amount = 1000, fuzzBrokenAutofixes = false } = {}) {
 };
 
 target.mocha = () => {
-	let errors = 0,
-		lastReturn;
+	const failed = [];
+	let lastReturn;
 
 	echo("Running unit tests");
 
+	/*
+	 * `c8` collects V8 coverage in a temp directory and, because `--clean`
+	 * defaults to true, deletes that directory before it starts the process
+	 * it instruments. The default location is derived from the repository
+	 * rather than from the run, so two overlapping invocations share it:
+	 * `npm test` and `npm run test:coverage` are separate commands, and a CI
+	 * job that runs them concurrently has one `c8` wiping the profile the
+	 * other is still relying on. The loser's `check-coverage` then reads a
+	 * partial profile and reports a threshold failure even though every test
+	 * passed -- and because that failure prints `ERROR: Coverage for ...`
+	 * rather than a mocha summary, the run goes red with no failing-test
+	 * count to explain it.
+	 *
+	 * Giving each invocation its own directory removes the shared state.
+	 * Both `c8` calls have to be pointed at it, since `check-coverage` reads
+	 * back what the instrumented run wrote.
+	 */
+	const coverageTempDir = path.join(COVERAGE_DIR, `tmp-${process.pid}`);
+
 	lastReturn = exec(
-		`${getBinFile("c8")} -- ${MOCHA} --forbid-only -R progress -t ${MOCHA_TIMEOUT} -c ${TEST_FILES}`,
+		`${getBinFile("c8")} --temp-directory "${coverageTempDir}" -- ${MOCHA} --forbid-only -R progress -t ${MOCHA_TIMEOUT} -c ${TEST_FILES}`,
 	);
 	if (lastReturn.code !== 0) {
-		errors++;
+		failed.push("the unit tests");
 	}
 
 	lastReturn = exec(
-		`${getBinFile("c8")} check-coverage --statements 99 --branches 98 --functions 99 --lines 99`,
+		`${getBinFile("c8")} check-coverage --temp-directory "${coverageTempDir}" --statements 99 --branches 98 --functions 99 --lines 99`,
 	);
 	if (lastReturn.code !== 0) {
-		errors++;
+		failed.push("the coverage thresholds");
 	}
 
-	if (errors) {
+	/*
+	 * The reports in `COVERAGE_DIR` are the output worth keeping; the raw V8
+	 * profile is not, and leaving a `tmp-<pid>` directory behind for every
+	 * run would accumulate indefinitely.
+	 */
+	fs.rmSync(coverageTempDir, { force: true, recursive: true });
+
+	if (failed.length) {
+		/*
+		 * A coverage-threshold failure prints `ERROR: Coverage for ...` and no
+		 * mocha summary, so a run that fails only there is red with no failing
+		 * test to point at. Name what failed so the two are told apart without
+		 * re-reading the whole log.
+		 */
+		echo(`FAILED: ${failed.join(" and ")}.`);
 		exit(1);
 	}
 };

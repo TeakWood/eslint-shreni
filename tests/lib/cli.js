@@ -1058,9 +1058,30 @@ describe("cli", () => {
 		});
 
 		describe("when supplied with report output file path", () => {
-			afterEach(() => {
-				sh.rm("-rf", "tests/output");
-			});
+			const REPORT_OUTPUT_PATH = "tests/output";
+
+			/**
+			 * Removes the report output path, whether it is currently a file or
+			 * a directory.
+			 *
+			 * These tests write `tests/output` into the source tree rather than
+			 * into a temporary directory, so a run that is interrupted partway
+			 * through this block (Ctrl-C, or a timeout killing the process)
+			 * leaves it behind. When the residue is a file, the next run fails
+			 * with `ENOTDIR` in the first test of the block and then cleans
+			 * itself up, producing a red run that goes green on retry. Clearing
+			 * the path on entry as well as on exit makes the block independent
+			 * of whatever the previous run left behind.
+			 * @returns {void}
+			 * @private
+			 */
+			function clearReportOutput() {
+				sh.rm("-rf", REPORT_OUTPUT_PATH);
+			}
+
+			beforeEach(clearReportOutput);
+
+			afterEach(clearReportOutput);
 
 			it(`should write the file and create dirs if they don't exist`, async () => {
 				const filePath = getFixturePath("single-quoted.js");
@@ -1114,6 +1135,51 @@ describe("cli", () => {
 				assert.strictEqual(exit, 2);
 				assert.isTrue(log.info.notCalled);
 				assert.isTrue(log.error.calledOnce);
+			});
+
+			it(`should write the file when an interrupted run left a stale output file behind`, async () => {
+				// The residue an interrupted run leaves: `tests/output` as a file.
+				fs.writeFileSync(REPORT_OUTPUT_PATH, "stale");
+
+				clearReportOutput();
+				assert.isFalse(fs.existsSync(REPORT_OUTPUT_PATH));
+
+				const filePath = getFixturePath("single-quoted.js");
+				const code = `--no-config-lookup --rule 'quotes: [1, double]' --o tests/output/eslint-output.txt ${filePath}`;
+
+				await cli.execute(code);
+
+				assert.include(
+					fs.readFileSync("tests/output/eslint-output.txt", "utf8"),
+					filePath,
+				);
+				assert.isTrue(log.info.notCalled);
+			});
+
+			it(`should write the file when an interrupted run left a stale output directory behind`, async () => {
+				// The residue is a directory holding a report from the previous run.
+				fs.mkdirSync(REPORT_OUTPUT_PATH);
+				fs.writeFileSync(
+					path.join(REPORT_OUTPUT_PATH, "eslint-output.txt"),
+					"stale",
+				);
+
+				clearReportOutput();
+				assert.isFalse(fs.existsSync(REPORT_OUTPUT_PATH));
+
+				const filePath = getFixturePath("single-quoted.js");
+				const code = `--no-config-lookup --rule 'quotes: [1, double]' --o tests/output/eslint-output.txt ${filePath}`;
+
+				await cli.execute(code);
+
+				const output = fs.readFileSync(
+					"tests/output/eslint-output.txt",
+					"utf8",
+				);
+
+				assert.include(output, filePath);
+				assert.notInclude(output, "stale");
+				assert.isTrue(log.info.notCalled);
 			});
 		});
 
