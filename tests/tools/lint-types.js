@@ -920,6 +920,52 @@ describe("lint-types", function () {
 			);
 		});
 
+		/**
+		 * Reduces an `include` pattern to the directory it starts from.
+		 * @param {string} pattern A tsconfig.json `include` entry.
+		 * @returns {string} Slash-separated repo-relative directory.
+		 */
+		function includedDirectory(pattern) {
+			const segments = pattern.split("/");
+			const globIndex = segments.findIndex(segment =>
+				segment.includes("*"),
+			);
+
+			return (
+				globIndex === -1
+					? segments.slice(0, -1)
+					: segments.slice(0, globIndex)
+			).join("/");
+		}
+
+		/*
+		 * The directive scan below walks CHECKED_DIRECTORIES, not `include`.
+		 * Nothing else ties the two together, so widening `include` to a tree
+		 * the array does not reach would leave that scan quietly reporting
+		 * full coverage while every file in the new tree went unchecked --
+		 * still compiled, still emitting a .d.ts, just never type-checked.
+		 * That is the exact failure the scan exists to prevent, so the link
+		 * is asserted here rather than left to whoever edits `include` next.
+		 */
+		it("walks every directory that 'include' reaches", () => {
+			const unreachable = TSCONFIG_JSON.include
+				.map(includedDirectory)
+				.filter(
+					directory =>
+						!CHECKED_DIRECTORIES.some(
+							checked =>
+								directory === checked ||
+								directory.startsWith(`${checked}/`),
+						),
+				);
+
+			assert.deepStrictEqual(
+				unreachable,
+				[],
+				`tsconfig.json 'include' reaches ${JSON.stringify(unreachable)}, which no CHECKED_DIRECTORIES entry covers; add the directory there so the // @ts-check scan below examines it`,
+			);
+		});
+
 		it("opts every included source into checking with // @ts-check", () => {
 			assert.strictEqual(TSCONFIG_JSON.compilerOptions.checkJs, false);
 
