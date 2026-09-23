@@ -28,6 +28,8 @@
       "ignoreDependencies": [
         // Underlying code coverage engine used in unit tests
         "c8",
+        // Second supported TypeScript major, resolved by name in tools/test-types.js
+        "typescript-5",
       ],
     },
     "docs": {

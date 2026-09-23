@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+
+    /*
+     * These map the four public entry point specifiers onto the very files
+     * package.json's `exports` map names in its `types` conditions. They
+     * are not a convenience: resolving `eslint` from inside this
+     * repository goes through the self-referential `file:.` devDependency,
+     * which npm materializes as a symlink (live) and pnpm materializes as
+     * a copy (stale). Mapping explicitly makes the probe check the
+     * declarations this repository just emitted under every package
+     * manager.
+     *
+     * `tests/tools/test-types.js` asserts these targets stay identical to
+     * the `types` conditions in package.json, so the duplication cannot
+     * drift, and `tools/test-types.js` asserts each target exists before
+     * running tsc, so a missing build cannot fall back to node resolution
+     * and pass against a stale copy.
+     */
+    "paths": {
+      "eslint": ["../../dist/types/lib/api.d.ts"],
+      "eslint/config": ["../../dist/types/lib/config-api.d.ts"],
+      "eslint/universal": ["../../dist/types/lib/universal.d.ts"],
+      "eslint/use-at-your-own-risk": [
+        "../../dist/types/lib/unsupported-api.d.ts"
+      ]
+    }
+  },
+  "include": ["index.ts"]
+}

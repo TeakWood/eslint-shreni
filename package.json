@@ -58,7 +58,8 @@
     "test:emfile": "node tools/check-emfile-handling.js",
     "test:fuzz": "node Makefile.js fuzz",
     "test:performance": "node Makefile.js perf",
-    "test:pnpm": "cd tests/pnpm && node check.js && pnpm install"
+    "test:pnpm": "cd tests/pnpm && node check.js && pnpm install",
+    "test:types": "node tools/lint-types.js --emit && node tools/test-types.js"
   },
   "allowScripts": {
     "core-js": false,
@@ -143,6 +144,16 @@
     "@cypress/webpack-preprocessor": "^6.0.2",
     "@eslint/eslintrc": "^3.3.6",
     "@eslint/json": "^2.0.1",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/debug": "^4.1.13",
+    "@types/esquery": "^1.5.4",
+    "@types/estree": "^1.0.9",
+    "@types/glob-parent": "^5.1.3",
+    "@types/imurmurhash": "^0.1.4",
+    "@types/is-glob": "^4.0.4",
+    "@types/json-stable-stringify-without-jsonify": "^1.0.2",
+    "@types/natural-compare": "^1.4.3",
+    "@types/node": "^26.1.2",
     "@typescript-eslint/parser": "^8.58.2",
     "babel-loader": "^8.0.5",
     "c8": "^11.0.0",
@@ -189,6 +200,7 @@
     "shelljs": "^0.10.0",
     "sinon": "^11.0.0",
     "typescript": "^6.0.3",
+    "typescript-5": "npm:typescript@^5.9.3",
     "webpack": "^5.109.2",
     "webpack-cli": "^4.5.0",
     "yorkie": "^2.0.0"

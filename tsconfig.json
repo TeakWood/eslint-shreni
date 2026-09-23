@@ -6,7 +6,10 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist/types",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "eslint": ["./lib/api.js"]
+    }
   },
   "include": [
     "lib/shared/**/*.js",
