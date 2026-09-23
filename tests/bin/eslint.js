@@ -498,7 +498,25 @@ describe("bin/eslint.js", () => {
 		];
 		const ARGS_WITH_CACHE = ARGS_WITHOUT_CACHE.concat("--cache");
 
+		/*
+		 * Wider than the mtime granularity of any filesystem ESLint runs on
+		 * (FAT's is the coarsest in common use, at 2 seconds), so shifting a
+		 * file's mtime by this much is always observable.
+		 */
+		const MTIME_SHIFT_MS = 10000;
+
+		/*
+		 * Set when a test shifts `SOURCE_PATH`'s mtime, so that `afterEach`
+		 * can put the shared fixture back exactly as it was found.
+		 */
+		let originalSourceStat = null;
+
 		describe("when no cache file exists", () => {
+			beforeEach(() => {
+				// This block's name is a precondition; establish it.
+				fs.rmSync(CACHE_PATH, { force: true, recursive: true });
+			});
+
 			it("creates a cache file when the --cache flag is used", () => {
 				const child = runESLint(ARGS_WITH_CACHE);
 
@@ -539,10 +557,30 @@ describe("bin/eslint.js", () => {
 			it("updates the cache file when the source file is modified", () => {
 				const initialCacheContent = fs.readFileSync(CACHE_PATH, "utf8");
 
-				// Update the file to change its mtime
-				fs.writeFileSync(
+				/*
+				 * The default `metadata` cache strategy keys each entry on the
+				 * source file's mtime and size, so changing the mtime is what
+				 * invalidates the entry.
+				 *
+				 * Rewriting the file with its own contents leaves the size
+				 * untouched, which makes the assertion below depend entirely
+				 * on that rewrite landing in a later filesystem timestamp tick
+				 * than the one already recorded in the cache. Where mtime
+				 * granularity is coarse the rewrite lands in the same tick,
+				 * the cache is rewritten byte-for-byte identically, and the
+				 * assertion fails. Set the mtime explicitly instead.
+				 *
+				 * The shift is backwards so that the mutation stays safe if a
+				 * run is interrupted before `afterEach` restores the fixture:
+				 * it is always a change relative to whatever the current mtime
+				 * is (so the next run still works), and it can only ever age
+				 * the fixture rather than push it ahead of the wall clock.
+				 */
+				originalSourceStat = fs.statSync(SOURCE_PATH);
+				fs.utimesSync(
 					SOURCE_PATH,
-					fs.readFileSync(SOURCE_PATH, "utf8"),
+					originalSourceStat.atime,
+					new Date(originalSourceStat.mtimeMs - MTIME_SHIFT_MS),
 				);
 
 				const child = runESLint(ARGS_WITH_CACHE);
@@ -612,6 +650,15 @@ describe("bin/eslint.js", () => {
 		afterEach(() => {
 			if (fs.existsSync(CACHE_PATH)) {
 				fs.unlinkSync(CACHE_PATH);
+			}
+
+			if (originalSourceStat) {
+				fs.utimesSync(
+					SOURCE_PATH,
+					originalSourceStat.atime,
+					originalSourceStat.mtime,
+				);
+				originalSourceStat = null;
 			}
 		});
 	});
