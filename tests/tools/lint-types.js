@@ -890,28 +890,18 @@ describe("lint-types", function () {
 	});
 
 	describe("against the repository's own tsconfig.json", () => {
-		const CHECKED_DIRECTORIES = [
-			"lib/shared",
-			"lib/config",
-
-			/*
-			 * Covers `utils/` and its `unicode/` subdirectory too, for the
-			 * same reason `lib/linter` covers `code-path-analysis/` below.
-			 */
-			"lib/rules",
-
-			/*
-			 * Covers `code-path-analysis/` too. `include` reaches the two with
-			 * separate patterns, but the walk below recurses, so naming the
-			 * parent is enough and naming both would double-count it.
-			 */
-			"lib/linter",
-			"lib/languages",
-			"lib/services",
-			"lib/eslint",
-			"lib/rule-tester",
-			"lib/cli-engine",
-		];
+		/*
+		 * `include` reaches each subtree with a pattern of its own, and for
+		 * most of the rollout this array named them one by one to match. It
+		 * names only the root now that the last of them has landed: the walk
+		 * below recurses, so `lib` covers every subtree at once, and listing
+		 * any of them alongside it would only double-count that subtree.
+		 *
+		 * Keeping the root here rather than the ten patterns is also what
+		 * makes the scan close over `lib/*.js` -- the entry points sit
+		 * directly in `lib`, which none of the subtree entries reached.
+		 */
+		const CHECKED_DIRECTORIES = ["lib"];
 		const OUT_DIR = path.join(REPO_ROOT, "dist", "types");
 
 		/**
@@ -1068,6 +1058,196 @@ describe("lint-types", function () {
 				),
 				`expected tsconfig.json 'include' to cover lib/cli-engine, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
+		});
+
+		/*
+		 * The entry points sit directly in `lib`, which every pattern above
+		 * steps past on its way into a subtree. The assertion is on the exact
+		 * pattern rather than a prefix for the same reason the two above are:
+		 * `startsWith("lib/")` matches all ten of them and so could not tell
+		 * whether the entry points themselves were covered.
+		 */
+		it("type-checks the lib root entry points", () => {
+			assert.ok(
+				TSCONFIG_JSON.include.includes("lib/*.js"),
+				`expected tsconfig.json 'include' to cover the lib root, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+			);
+		});
+
+		/*
+		 * Everything above stops at what the build emits. These close the last
+		 * link, from the emitted declarations to the consumer: a `types`
+		 * condition on each entry of the exports map. Without one, every
+		 * declaration in dist/types is unreachable from an `import "eslint"`
+		 * and the whole rollout is invisible downstream.
+		 */
+		it("points every exports map entry at its declarations", () => {
+			const ENTRY_POINTS = {
+				".": "./lib/api.js",
+				"./config": "./lib/config-api.js",
+				"./use-at-your-own-risk": "./lib/unsupported-api.js",
+				"./universal": "./lib/universal.js",
+			};
+
+			const wrong = Object.entries(ENTRY_POINTS)
+				.map(([subpath, source]) => ({
+					subpath,
+					actual: PACKAGE_JSON.exports[subpath].types,
+					expected: source.replace(
+						/^\.\/lib\/(?<name>.+)\.js$/u,
+						"./dist/types/lib/$<name>.d.ts",
+					),
+				}))
+				.filter(entry => entry.actual !== entry.expected);
+
+			assert.deepStrictEqual(wrong, []);
+		});
+
+		/*
+		 * A `types` condition is only honored when it is listed first, so an
+		 * entry that has one but resolves `default` ahead of it reads as wired
+		 * up while behaving as though it were not.
+		 */
+		it("resolves types ahead of every other condition", () => {
+			const misordered = Object.entries(PACKAGE_JSON.exports)
+				.filter(([, target]) => typeof target === "object")
+				.map(([subpath, target]) => ({
+					subpath,
+					firstCondition: Object.keys(target)[0],
+				}))
+				.filter(entry => entry.firstCondition !== "types");
+
+			assert.deepStrictEqual(misordered, []);
+		});
+
+		/*
+		 * A `types` condition naming a path outside `files` is wired up in the
+		 * repository and absent from the tarball, which is the one failure
+		 * mode no test run from a checkout can otherwise see.
+		 */
+		it("publishes the directory the types conditions point into", () => {
+			const outside = Object.values(PACKAGE_JSON.exports)
+				.filter(target => typeof target === "object")
+				.map(target => target.types)
+				.filter(
+					types =>
+						!PACKAGE_JSON.files.some(published =>
+							types.startsWith(`./${published}/`),
+						),
+				);
+
+			assert.deepStrictEqual(outside, []);
+		});
+
+		/*
+		 * Emitting the file proves nothing on its own. A declaration that lost
+		 * its exports -- which is what a `module.exports = <identifier>` in a
+		 * file carrying a `@typedef` silently emits, at exit 0 and with no
+		 * diagnostic -- satisfies every path-based assertion above while
+		 * leaving `import { ESLint } from "eslint"` with nothing to resolve.
+		 */
+		it("emits the public surface of every exports map entry", async () => {
+			const EXPECTED = {
+				"./dist/types/lib/api.d.ts": [
+					/^export function loadESLint\(\): Promise<typeof ESLint>;$/mu,
+					/^export \{ Linter, ESLint, RuleTester, SourceCode \};$/mu,
+				],
+				"./dist/types/lib/config-api.d.ts": [
+					/^export const defineConfig: ConfigHelpers\["defineConfig"\];$/mu,
+					/^export const globalIgnores: ConfigHelpers\["globalIgnores"\];$/mu,
+					/^export const includeIgnoreFile: ConfigHelpers\["includeIgnoreFile"\];$/mu,
+				],
+				"./dist/types/lib/unsupported-api.d.ts": [
+					/^export \{ builtinRules, shouldUseFlatConfig \};$/mu,
+				],
+				"./dist/types/lib/universal.d.ts": [/^export \{ Linter \};$/mu],
+			};
+
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const missing = Object.entries(EXPECTED).flatMap(
+				([declaration, patterns]) => {
+					const emitted = fs.readFileSync(
+						path.join(REPO_ROOT, declaration),
+						"utf8",
+					);
+
+					return patterns
+						.filter(pattern => !pattern.test(emitted))
+						.map(pattern => `${declaration}: ${pattern.source}`);
+				},
+			);
+
+			assert.deepStrictEqual(missing, []);
+		});
+
+		/*
+		 * The hazard the test above pins for the entry points is not confined
+		 * to them. A `module.exports = <identifier>` in a file that also
+		 * carries a `@typedef` emits a declaration holding the typedefs and
+		 * nothing else: no `export =`, no members, exit 0 and no diagnostic.
+		 * `lib/cli.js` is one such file and no exports map entry reaches it,
+		 * so the scan runs over every annotated source instead.
+		 *
+		 * `module.exports = {}` is exempt because it is the shape the two
+		 * typedef-only hubs use, and a declaration carrying nothing but types
+		 * is the correct emit for them.
+		 */
+		it("keeps the value export of every source that has one", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const dropped = checkedSources()
+				.filter(source => {
+					const text = fs.readFileSync(
+						path.join(REPO_ROOT, source),
+						"utf8",
+					);
+
+					return (
+						/^(?:module\.)?exports(?:\.\w+)? = /mu.test(text) &&
+						!/^module\.exports = \{\};$/mu.test(text)
+					);
+				})
+				.filter(source => {
+					const declaration = path.join(
+						OUT_DIR,
+						source.replace(/\.js$/u, ".d.ts"),
+					);
+
+					return !/^(?:export = |export \{|export (?:declare )?(?:function|const|class|namespace|let|var|default)\b)/mu.test(
+						fs.readFileSync(declaration, "utf8"),
+					);
+				});
+
+			assert.deepStrictEqual(dropped, []);
+		});
+
+		/*
+		 * Left to inference, a re-export of a dependency emits an import of a
+		 * path relative to *this* repository's node_modules. That resolves
+		 * while the declarations sit beside the checkout that produced them
+		 * and resolves to nothing once `dist/types` is published, so the
+		 * breakage never shows up in a run from a checkout.
+		 */
+		it("names dependencies by package in the entry declarations", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const relative = Object.values(PACKAGE_JSON.exports)
+				.filter(target => typeof target === "object")
+				.map(target => target.types)
+				.filter(types =>
+					fs
+						.readFileSync(path.join(REPO_ROOT, types), "utf8")
+						.includes("node_modules"),
+				);
+
+			assert.deepStrictEqual(relative, []);
 		});
 
 		/**

@@ -18,6 +18,7 @@
     "lib/services/**/*.js",
     "lib/eslint/**/*.js",
     "lib/rule-tester/**/*.js",
-    "lib/cli-engine/**/*.js"
+    "lib/cli-engine/**/*.js",
+    "lib/*.js"
   ]
 }

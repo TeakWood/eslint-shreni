@@ -10,16 +10,20 @@
   "main": "./lib/api.js",
   "exports": {
     ".": {
+      "types": "./dist/types/lib/api.d.ts",
       "default": "./lib/api.js"
     },
     "./config": {
+      "types": "./dist/types/lib/config-api.d.ts",
       "default": "./lib/config-api.js"
     },
     "./package.json": "./package.json",
     "./use-at-your-own-risk": {
+      "types": "./dist/types/lib/unsupported-api.d.ts",
       "default": "./lib/unsupported-api.js"
     },
     "./universal": {
+      "types": "./dist/types/lib/universal.d.ts",
       "default": "./lib/universal.js"
     }
   },
@@ -95,6 +99,7 @@
     "README.md",
     "bin",
     "conf",
+    "dist/types",
     "lib",
     "messages"
   ],
