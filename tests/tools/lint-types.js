@@ -893,7 +893,12 @@ describe("lint-types", function () {
 		const CHECKED_DIRECTORIES = [
 			"lib/shared",
 			"lib/config",
-			"lib/rules/utils",
+
+			/*
+			 * Covers `utils/` and its `unicode/` subdirectory too, for the
+			 * same reason `lib/linter` covers `code-path-analysis/` below.
+			 */
+			"lib/rules",
 
 			/*
 			 * Covers `code-path-analysis/` too. `include` reaches the two with
@@ -983,12 +988,17 @@ describe("lint-types", function () {
 			);
 		});
 
-		it("type-checks lib/rules/utils", () => {
+		/*
+		 * The assertion is on the exact pattern rather than a prefix because
+		 * that is what distinguishes the whole tree from the `utils/` subset
+		 * this entry used to name: a `startsWith("lib/rules/")` check would
+		 * pass just as happily on `lib/rules/utils/**` alone, leaving the 293
+		 * rule files out of the emit set while the test still went green.
+		 */
+		it("type-checks lib/rules", () => {
 			assert.ok(
-				TSCONFIG_JSON.include.some(pattern =>
-					pattern.startsWith("lib/rules/utils/"),
-				),
-				`expected tsconfig.json 'include' to cover lib/rules/utils, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
+				TSCONFIG_JSON.include.includes("lib/rules/**/*.js"),
+				`expected tsconfig.json 'include' to cover lib/rules, got ${JSON.stringify(TSCONFIG_JSON.include)}`,
 			);
 		});
 
@@ -1217,6 +1227,56 @@ describe("lint-types", function () {
 				.filter(line => !line.includes("[key: string]: any;"));
 
 			assert.deepStrictEqual(untyped, []);
+		});
+
+		/*
+		 * Widening `include` to the whole rule tree is what this suite's
+		 * completeness gate above is for, but passing it only proves the 293
+		 * files carry the directive. It says nothing about what they emit, and
+		 * `lint:types` cannot tell the difference either: `strict` reports a
+		 * *missing* type but never an explicit `any` one. Before the rule files
+		 * were annotated they emitted `create(context: any)` and exited 0 doing
+		 * it, so the signature below is the only place the annotation work is
+		 * actually visible to a consumer.
+		 */
+		it("emits a typed create() for every rule", async () => {
+			fs.rmSync(OUT_DIR, { force: true, recursive: true });
+
+			await runLintTypes(REPO_ROOT, "--emit");
+
+			const ruleDeclarations = filesUnder(
+				path.join(OUT_DIR, "lib", "rules"),
+			)
+				.filter(file => file.endsWith(".d.ts"))
+				.filter(file => !file.includes("/"))
+
+				/*
+				 * The loader, not a rule: it re-exports the rule map and has no
+				 * `create()` of its own.
+				 */
+				.filter(file => file !== "index.d.ts");
+
+			// Guards against the filters above quietly matching nothing.
+			assert.ok(
+				ruleDeclarations.length > 250,
+				`found ${ruleDeclarations.length}`,
+			);
+
+			const untyped = ruleDeclarations.filter(
+				file =>
+					!/^ {4}function create\(context: RuleContext\): RuleVisitor;$/mu.test(
+						fs.readFileSync(
+							path.join(OUT_DIR, "lib", "rules", file),
+							"utf8",
+						),
+					),
+			);
+
+			assert.deepStrictEqual(
+				untyped,
+				[],
+				`expected every rule to emit a typed create(), but ${untyped.length} did not: ${JSON.stringify(untyped.slice(0, 5))}`,
+			);
 		});
 
 		/*
