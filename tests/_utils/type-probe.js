@@ -24,6 +24,13 @@ const path = require("node:path"),
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const TSCONFIG_PATH = path.join(PROJECT_ROOT, "tsconfig.json");
 
+/*
+ * The project sets `checkJs: false` and opts each annotated source into
+ * checking with this pragma, so a probe has to carry it too or it is parsed and
+ * never checked — which would make every negative probe pass vacuously.
+ */
+const CHECK_PRAGMA = "// @ts-check";
+
 /**
  * Rewrites a path to forward slashes.
  *
@@ -77,6 +84,8 @@ function formatDiagnostics(diagnostics) {
  * Type-checks a snippet as if it were a module at `probePath`, so that it can
  * reach the modules under test through the same relative paths the real sources
  * use.
+ * The snippet is opted into checking automatically, so callers write it exactly
+ * as they would write a source module.
  * @param {string} code The snippet to type-check.
  * @param {string} probePath The snippet's location, relative to the project
  * root. It must not name an existing file.
@@ -86,6 +95,9 @@ function formatDiagnostics(diagnostics) {
 function typeCheckProbe(code, probePath) {
 	const absoluteProbePath = path.join(PROJECT_ROOT, probePath);
 	const options = { ...parseProjectConfig().parsed.options, noEmit: true };
+	const source = code.startsWith(CHECK_PRAGMA)
+		? code
+		: `${CHECK_PRAGMA}\n${code}`;
 
 	/**
 	 * Checks whether a path is the probe's.
@@ -101,12 +113,12 @@ function typeCheckProbe(code, probePath) {
 
 	host.getSourceFile = (fileName, languageVersion, ...rest) =>
 		isProbe(fileName)
-			? ts.createSourceFile(fileName, code, languageVersion, true)
+			? ts.createSourceFile(fileName, source, languageVersion, true)
 			: getSourceFile.call(host, fileName, languageVersion, ...rest);
 	host.fileExists = fileName =>
 		isProbe(fileName) || fileExists.call(host, fileName);
 	host.readFile = fileName =>
-		isProbe(fileName) ? code : readFile.call(host, fileName);
+		isProbe(fileName) ? source : readFile.call(host, fileName);
 
 	const program = ts.createProgram([absoluteProbePath], options, host);
 
@@ -122,6 +134,7 @@ function typeCheckProbe(code, probePath) {
 //-----------------------------------------------------------------------------
 
 module.exports = {
+	CHECK_PRAGMA,
 	PROJECT_ROOT,
 	TSCONFIG_PATH,
 	formatDiagnostics,

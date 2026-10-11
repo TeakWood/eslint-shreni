@@ -7,7 +7,21 @@
    */
   "compilerOptions": {
     "allowJs": true,
-    "checkJs": true,
+
+    /*
+     * Checking is opted into per file with a `// @ts-check` pragma on line 1,
+     * NOT by `include`. `include` only picks the program's roots; tsc then
+     * pulls in everything they `require()` transitively and checks that too.
+     * `lib/config/default-config.js` requires `../rules` and `../languages/js`,
+     * so covering `lib/config/**` drags the whole `lib/` tree into the program
+     * and a global `checkJs` would report ~4,000 errors in modules later beads
+     * own. There is no way to exclude a transitively-reached file, so the
+     * pragma is the only mechanism that scopes checking to annotated sources.
+     *
+     * `tests/tools/tsc-pipeline.js` pins the two halves together: every `.js`
+     * file under an `include` directory must carry the pragma.
+     */
+    "checkJs": false,
     "strict": true,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -28,7 +42,17 @@
      * version string, Ajv's draft-04 meta-schema, `conf/replacements.json`).
      * Without this they fail with TS2732.
      */
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+
+    /*
+     * Third-party declarations are not this project's contract, and two of the
+     * ones now reachable are broken in ways we cannot fix from here: espree's
+     * `dist/espree.d.cts` re-exports its ESM entry, which is TS1479 under
+     * `node16` CJS resolution, and `@eslint-community/eslint-utils` imports
+     * from `"eslint"` — which resolves to this fork's own untyped `lib/api.js`
+     * via the self-link in `node_modules`, so TS7016.
+     */
+    "skipLibCheck": true
   },
 
   /*
@@ -41,5 +65,5 @@
    * ship no usable types of their own. Declaration files produce no output, so
    * including them does not disturb the `dist/types/` layout pinned above.
    */
-  "include": ["lib/shared/**/*.js", "types/**/*.d.ts"]
+  "include": ["lib/config/**/*.js", "lib/shared/**/*.js", "types/**/*.d.ts"]
 }

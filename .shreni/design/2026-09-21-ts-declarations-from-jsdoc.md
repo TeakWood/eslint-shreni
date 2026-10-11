@@ -24,28 +24,58 @@ Use TypeScript's `checkJs` + `emitDeclarationOnly` pipeline. The sources remain
 The runtime CJS output is unchanged.
 
 **`tsconfig.json` at the repo root:**
+
 ```jsonc
 {
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "strict": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "outDir": "dist/types",
-    "moduleResolution": "node16",
-    "target": "ES2022"
-  },
-  "include": []   // expanded bead-by-bead as modules are annotated
+	"compilerOptions": {
+		"allowJs": true,
+		"checkJs": true,
+		"strict": true,
+		"declaration": true,
+		"emitDeclarationOnly": true,
+		"outDir": "dist/types",
+		"moduleResolution": "node16",
+		"target": "ES2022",
+	},
+	"include": [], // expanded bead-by-bead as modules are annotated
 }
 ```
 
 Two new npm scripts:
+
 - `lint:types` — `tsc --noEmit` (type-check without emitting; run in CI and dev)
 - `build:types` — `tsc` (emit `.d.ts` to `dist/types/`; run before publish)
 
 The `include` array starts empty. Each annotation bead expands it to cover its
 module group, so `pnpm lint:types` stays green after every individual merge.
+
+### Amendment (bead C3 `x04`): checking is opted into per file
+
+`include` alone cannot scope the checking. It only picks the program's _roots_;
+tsc then pulls in everything they `require()` transitively and, with a global
+`checkJs`, checks that too. `lib/config/default-config.js` requires `../rules`
+and `../languages/js`, so covering `lib/config/**` drags the whole `lib/` tree
+into the program and reports thousands of errors in modules that later beads
+own. TypeScript offers no way to exclude a transitively-reached file.
+
+So `checkJs` is `false`, and every annotated source carries a `// @ts-check`
+pragma on line 1. **Each remaining annotation bead must add that pragma to the
+files it annotates, as well as widening `include`.**
+`tests/tools/tsc-pipeline.js` ties the two halves together and fails if a file
+under an `include` directory is missing it.
+
+Two consequences of the wider program:
+
+- `skipLibCheck` is now on. Third-party declarations are not this project's
+  contract, and two reachable ones cannot compile here regardless: espree's
+  `dist/espree.d.cts` re-exports its ESM entry (TS1479 under `node16` CJS), and
+  `@eslint-community/eslint-utils` imports from `"eslint"`, which resolves to
+  this fork's own untyped `lib/api.js` through the self-link in `node_modules`
+  (TS7016).
+- `build:types` now emits declarations for every reachable module, not just the
+  annotated ones, so `dist/types/` holds inferred output for files whose beads
+  have not landed. The `rootDir`-pinned layout is unaffected. Bead C15 shapes
+  the published surface through the `exports` map.
 
 ## Approach: central type hub at `lib/shared/types.js`
 
@@ -66,10 +96,19 @@ entries once all sources are annotated:
 
 ```jsonc
 {
-  ".":                    { "types": "./dist/types/api.d.ts",           "default": "./lib/api.js" },
-  "./config":             { "types": "./dist/types/config-api.d.ts",    "default": "./lib/config-api.js" },
-  "./universal":          { "types": "./dist/types/universal.d.ts",     "default": "./lib/universal.js" },
-  "./use-at-your-own-risk": { "types": "./dist/types/unsupported-api.d.ts", "default": "./lib/unsupported-api.js" }
+	".": { "types": "./dist/types/api.d.ts", "default": "./lib/api.js" },
+	"./config": {
+		"types": "./dist/types/config-api.d.ts",
+		"default": "./lib/config-api.js",
+	},
+	"./universal": {
+		"types": "./dist/types/universal.d.ts",
+		"default": "./lib/universal.js",
+	},
+	"./use-at-your-own-risk": {
+		"types": "./dist/types/unsupported-api.d.ts",
+		"default": "./lib/unsupported-api.js",
+	},
 }
 ```
 
@@ -109,6 +148,7 @@ C1 (pipeline) → C2 (shared) → C3 (config) ──→ C5 (linter) → C7 (esli
 ```
 
 Bead IDs:
+
 - C1 `v7i`, C2 `k6g`, C3 `x04`, C4 `58n`, C5 `2ya`, C6 `08i`
 - C7 `052`, C8 `0sf`, C9 `qs6`
 - Cru `ozv`, Cr1 `7cu`, Cr2 `eft`, Cr3 `e6b`, Cr4 `9z0`, Crm `7qe`
@@ -133,13 +173,13 @@ would not be maintained by this project.
 
 ## Risks and mitigations
 
-| Risk | Mitigation |
-|---|---|
-| `lib/linter/code-path-analysis/code-path-state.js` (2,277 lines, complex state machine) surfaces many implicit `any` under `strict:true` | Isolated in its own bead (C6 `08i`); `@ts-ignore` with comment is permitted here |
-| 4 monster rule files (indent 2318, no-unused-vars 1826, no-extra-parens 1657, indent-legacy 1357) need deep internal annotation | Isolated in their own bead (Crm `7qe`); reviewed independently from the 4 uniform batches |
-| `lib/rules/utils/ast-utils.js` (2,962 lines) is a shared dependency for all rules | Extracted into its own bead (Cru `ozv`) that must merge before any rule batch starts |
-| TS 5.x compat: TS 6 syntax may not round-trip to TS 5 | Probe package CI check runs both; catches before merge |
-| Rules annotation pattern unclear until `lib/shared/types.js` is defined | C2 delivers `RuleModule` typedef before Cru starts; validate against a sample in C2 |
+| Risk                                                                                                                                     | Mitigation                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `lib/linter/code-path-analysis/code-path-state.js` (2,277 lines, complex state machine) surfaces many implicit `any` under `strict:true` | Isolated in its own bead (C6 `08i`); `@ts-ignore` with comment is permitted here          |
+| 4 monster rule files (indent 2318, no-unused-vars 1826, no-extra-parens 1657, indent-legacy 1357) need deep internal annotation          | Isolated in their own bead (Crm `7qe`); reviewed independently from the 4 uniform batches |
+| `lib/rules/utils/ast-utils.js` (2,962 lines) is a shared dependency for all rules                                                        | Extracted into its own bead (Cru `ozv`) that must merge before any rule batch starts      |
+| TS 5.x compat: TS 6 syntax may not round-trip to TS 5                                                                                    | Probe package CI check runs both; catches before merge                                    |
+| Rules annotation pattern unclear until `lib/shared/types.js` is defined                                                                  | C2 delivers `RuleModule` typedef before Cru starts; validate against a sample in C2       |
 
 ## Open questions
 
