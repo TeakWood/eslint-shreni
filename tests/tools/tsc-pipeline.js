@@ -32,9 +32,10 @@ const {
  * Lists the directories of sources `include` covers.
  *
  * Both glob depths are recognized: a recursive entry takes a whole tree, while
- * a single-star one takes only that directory's own files — which is how
- * `lib/linter/` is covered without dragging in the not-yet-annotated
- * `lib/linter/code-path-analysis/`.
+ * a single-star one takes only that directory's own files, which is how a
+ * directory can be covered while a subdirectory of it is still unannotated.
+ * Every entry is recursive today, but the single-star form stays supported so
+ * that the next partly-annotated directory does not slip past these checks.
  * @param {any} raw The raw `tsconfig.json` object.
  * @returns {{ directory: string, recursive: boolean }[]} Each covered
  * directory, relative to the project root, and how deep its glob reaches.

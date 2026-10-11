@@ -69,16 +69,7 @@
     "lib/config/**/*.js",
     "lib/eslint/**/*.js",
     "lib/languages/**/*.js",
-
-    /*
-     * Single-star on purpose: `lib/linter/code-path-analysis/` is not
-     * annotated yet, and `tests/tools/tsc-pipeline.js` requires every `.js`
-     * file a glob matches to carry the `// @ts-check` pragma. The subdirectory
-     * is still pulled into the program transitively through `linter.js`, so it
-     * emits declarations; it is simply not checked. Widen this to a recursive
-     * glob in the bead that annotates it.
-     */
-    "lib/linter/*.js",
+    "lib/linter/**/*.js",
     "lib/rule-tester/**/*.js",
     "lib/services/**/*.js",
     "lib/shared/**/*.js",
