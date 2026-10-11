@@ -715,6 +715,28 @@ describe("linter types", () => {
 				"`verifyAndFix()` should report the fixed output",
 			);
 		});
+
+		it("should accept a predicate as the `fix` option, which is how `fixTypes` is applied", () => {
+			/*
+			 * `getFixerForFixTypes()` in `lib/eslint/eslint-helpers.js` turns
+			 * the `fixTypes` option into a per-message predicate and hands it
+			 * to `verifyAndFix()`, which passes it on to
+			 * `SourceCodeFixer.applyFixes()` as its `shouldFix` argument.
+			 */
+			assertAccepts(
+				[
+					'const { Linter } = require("./linter.js");',
+					"",
+					"const linter = new Linter();",
+					"",
+					'linter.verifyAndFix("var x = 1;", { rules: {} }, {',
+					'	filename: "a.js",',
+					"	fix: message => message.ruleId !== null,",
+					"});",
+				],
+				"a fix predicate should be accepted",
+			);
+		});
 	});
 
 	describe("SourceCodeTraverser", () => {

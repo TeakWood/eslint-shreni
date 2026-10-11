@@ -67,6 +67,7 @@
    */
   "include": [
     "lib/config/**/*.js",
+    "lib/eslint/**/*.js",
     "lib/languages/**/*.js",
 
     /*
@@ -78,6 +79,7 @@
      * glob in the bead that annotates it.
      */
     "lib/linter/*.js",
+    "lib/services/**/*.js",
     "lib/shared/**/*.js",
     "types/**/*.d.ts"
   ]
