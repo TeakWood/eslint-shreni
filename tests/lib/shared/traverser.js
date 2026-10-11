@@ -6,6 +6,10 @@
 
 const assert = require("chai").assert;
 const Traverser = require("../../../lib/shared/traverser");
+const {
+	formatDiagnostics,
+	typeCheckProbe,
+} = require("../../_utils/type-probe");
 
 //------------------------------------------------------------------------------
 // Tests
@@ -105,5 +109,31 @@ describe("Traverser", () => {
 			"ClassBody",
 			"Decorator",
 		]);
+	});
+});
+
+describe("Traverser declarations", () => {
+	it("should expose `getKeys()` to other modules", () => {
+		/*
+		 * `getKeys()` is internal to ESLint but is used across modules, so it
+		 * cannot carry a `@private` tag: tsc turns the tag into a real
+		 * `private` modifier in the emitted `traverser.d.ts`, and the call
+		 * below then fails with TS2341. This probe mirrors that call site.
+		 */
+		const diagnostics = typeCheckProbe(
+			[
+				'"use strict";',
+				'const Traverser = require("./traverser.js");',
+				"",
+				"module.exports = { fallback: Traverser.getKeys };",
+			].join("\n"),
+			"lib/shared/__visibility-probe__.js",
+		);
+
+		assert.strictEqual(
+			diagnostics.length,
+			0,
+			`\`Traverser.getKeys\` should be reachable from \`lib/linter/linter.js\`:\n${formatDiagnostics(diagnostics)}`,
+		);
 	});
 });

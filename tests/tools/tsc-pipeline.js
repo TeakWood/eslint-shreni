@@ -15,63 +15,13 @@ const assert = require("chai").assert,
 	path = require("node:path"),
 	ts = require("typescript");
 
-//------------------------------------------------------------------------------
-// Helpers
-//------------------------------------------------------------------------------
-
-const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const TSCONFIG_PATH = path.join(PROJECT_ROOT, "tsconfig.json");
-
-/**
- * Rewrites a path to forward slashes.
- *
- * TypeScript always reports paths with forward slashes, while `path.join()`
- * uses a backslash on Windows. Normalizing both sides keeps the assertions
- * below from passing on POSIX and failing on Windows.
- * @param filePath The path to normalize.
- * @returns The path with every separator as a forward slash.
- */
-function toPosix(filePath) {
-	return filePath.split(path.sep).join("/");
-}
-
-/**
- * Reads and resolves the root `tsconfig.json` the way `tsc` does.
- * @returns The parsed command line, including resolved options and file names.
- */
-function parseProjectConfig() {
-	const { config, error } = ts.readConfigFile(TSCONFIG_PATH, ts.sys.readFile);
-
-	assert.isUndefined(
-		error,
-		`tsconfig.json is not readable: ${error && ts.flattenDiagnosticMessageText(error.messageText, " ")}`,
-	);
-
-	return {
-		raw: config,
-		parsed: ts.parseJsonConfigFileContent(
-			config,
-			ts.sys,
-			PROJECT_ROOT,
-			void 0,
-			TSCONFIG_PATH,
-		),
-	};
-}
-
-/**
- * Formats diagnostics as a single readable string for assertion messages.
- * @param diagnostics The diagnostics to format.
- * @returns One message per line.
- */
-function formatDiagnostics(diagnostics) {
-	return diagnostics
-		.map(
-			diagnostic =>
-				`TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`,
-		)
-		.join("\n");
-}
+const {
+	PROJECT_ROOT,
+	TSCONFIG_PATH,
+	formatDiagnostics,
+	parseProjectConfig,
+	toPosix,
+} = require("../_utils/type-probe");
 
 //------------------------------------------------------------------------------
 // Tests
@@ -87,7 +37,12 @@ describe("tsc pipeline", () => {
 		});
 
 		it("should resolve without configuration errors", () => {
-			const { parsed } = parseProjectConfig();
+			const { parsed, readError } = parseProjectConfig();
+
+			assert.isUndefined(
+				readError,
+				`tsconfig.json is not readable: ${readError && ts.flattenDiagnosticMessageText(readError.messageText, " ")}`,
+			);
 
 			assert.strictEqual(
 				parsed.errors.length,
@@ -141,15 +96,28 @@ describe("tsc pipeline", () => {
 			assert.strictEqual(parsed.options.target, ts.ScriptTarget.ES2022);
 		});
 
-		it("should list only existing files in `include`", () => {
+		it("should have every `include` entry match at least one file", () => {
 			const { raw } = parseProjectConfig();
 
 			assert.isArray(raw.include, "`include` should be an array");
 
+			/*
+			 * The entries are globs, so they cannot be checked with
+			 * `existsSync`. Resolving each one on its own catches a stale
+			 * entry that the combined file list would hide.
+			 */
 			for (const entry of raw.include) {
-				assert.isTrue(
-					fs.existsSync(path.join(PROJECT_ROOT, entry)),
-					`\`include\` entry "${entry}" should exist`,
+				const matched = ts.parseJsonConfigFileContent(
+					{ ...raw, include: [entry] },
+					ts.sys,
+					PROJECT_ROOT,
+					void 0,
+					TSCONFIG_PATH,
+				).fileNames;
+
+				assert.isNotEmpty(
+					matched,
+					`\`include\` entry "${entry}" should match at least one file`,
 				);
 			}
 		});
@@ -162,12 +130,16 @@ describe("tsc pipeline", () => {
 				parsed.fileNames,
 				"the project should have at least one input file",
 			);
+			assert.isNotEmpty(
+				parsed.fileNames.filter(fileName => fileName.endsWith(".js")),
+				"the project should type-check JavaScript sources",
+			);
 
 			for (const fileName of parsed.fileNames) {
 				assert.match(
 					fileName,
-					/\.js$/u,
-					"only JavaScript sources should be type-checked",
+					/(?:\.js|\.d\.ts)$/u,
+					"inputs should be JavaScript sources or ambient declarations",
 				);
 				assert.isTrue(
 					fs.existsSync(fileName),
@@ -176,9 +148,82 @@ describe("tsc pipeline", () => {
 			}
 		});
 
+		it("should resolve `require()`d JSON, which several lib modules depend on", () => {
+			const { parsed } = parseProjectConfig();
+
+			assert.isTrue(
+				parsed.options.resolveJsonModule,
+				"resolveJsonModule should be enabled, or requiring JSON fails with TS2732",
+			);
+		});
+
+		it("should map a declaration input to no output", () => {
+			const { parsed } = parseProjectConfig();
+			const ambient = parsed.fileNames.find(fileName =>
+				fileName.endsWith(".d.ts"),
+			);
+
+			assert.isDefined(
+				ambient,
+				"`include` should carry the hand-written ambient declarations",
+			);
+
+			/*
+			 * Declaration inputs emit nothing, which is why adding `types/**`
+			 * to `include` cannot disturb the `dist/types/` layout that
+			 * `rootDir` pins.
+			 */
+			assert.deepStrictEqual(
+				ts.getOutputFileNames(parsed, ambient, false),
+				[],
+			);
+		});
+
+		it("should type-check every source in each annotated directory", () => {
+			const { raw, parsed } = parseProjectConfig();
+			const inputs = new Set(parsed.fileNames.map(toPosix));
+
+			/*
+			 * A directory enters `include` as a whole, so every `.js` file in
+			 * it must be annotated. Reading the directories back off `include`
+			 * keeps this honest as the glob grows bead by bead, instead of
+			 * hard-coding the set that happens to be annotated today.
+			 */
+			const directories = raw.include
+				.filter(entry => entry.endsWith("/**/*.js"))
+				.map(entry => entry.slice(0, -"/**/*.js".length));
+
+			assert.isNotEmpty(
+				directories,
+				"`include` should cover at least one directory of sources",
+			);
+
+			for (const directory of directories) {
+				const absolute = path.join(PROJECT_ROOT, directory);
+				const sources = fs
+					.readdirSync(absolute, { recursive: true })
+					.map(entry => toPosix(String(entry)))
+					.filter(entry => entry.endsWith(".js"));
+
+				assert.isNotEmpty(
+					sources,
+					`"${directory}" should contain JavaScript sources`,
+				);
+
+				for (const source of sources) {
+					assert.isTrue(
+						inputs.has(toPosix(path.join(absolute, source))),
+						`"${directory}/${source}" should be type-checked`,
+					);
+				}
+			}
+		});
+
 		it("should map an input file to a declaration file under dist/types", () => {
 			const { parsed } = parseProjectConfig();
-			const [input] = parsed.fileNames;
+			const input = parsed.fileNames.find(fileName =>
+				fileName.endsWith(".js"),
+			);
 			const outputs = ts.getOutputFileNames(parsed, input, false);
 			const expected = toPosix(
 				path.join(

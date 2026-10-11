@@ -21,14 +21,25 @@
     "rootDir": ".",
     "target": "ES2022",
     "module": "node16",
-    "moduleResolution": "node16"
+    "moduleResolution": "node16",
+
+    /*
+     * Several `lib/` modules `require()` JSON directly (`package.json` for the
+     * version string, Ajv's draft-04 meta-schema, `conf/replacements.json`).
+     * Without this they fail with TS2732.
+     */
+    "resolveJsonModule": true
   },
 
   /*
    * Expanded bead-by-bead as modules are annotated, so that `pnpm lint:types`
    * stays green after every individual merge. It cannot be literally empty:
-   * tsc fails a zero-input project with TS18003, so it is seeded with the one
+   * tsc fails a zero-input project with TS18003, so it was seeded with a single
    * already-annotation-clean leaf module.
+   *
+   * `types/**` carries hand-written ambient declarations for dependencies that
+   * ship no usable types of their own. Declaration files produce no output, so
+   * including them does not disturb the `dist/types/` layout pinned above.
    */
-  "include": ["lib/shared/directives.js"]
+  "include": ["lib/shared/**/*.js", "types/**/*.d.ts"]
 }
