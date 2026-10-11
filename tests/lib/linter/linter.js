@@ -9690,6 +9690,47 @@ let c; // var a = "test2";
 		});
 	});
 
+	describe("stats", () => {
+		/*
+		 * `storeTime()` indexes `times.passes` by `fixPasses`, which only
+		 * `verifyAndFix()` used to initialize — so collecting stats through
+		 * `verify()` on a fresh instance indexed the array with `undefined`
+		 * and threw.
+		 */
+		it("should collect times from verify() on a fresh instance", () => {
+			const freshLinter = new Linter();
+			const messages = freshLinter.verify(
+				"var x = 1;",
+				{ rules: {} },
+				{ filename: "a.js", stats: true },
+			);
+
+			assert.deepStrictEqual(messages, []);
+
+			const times = freshLinter.getTimes();
+
+			assert.lengthOf(times.passes, 1);
+			assert.isNumber(times.passes[0].parse.total);
+			assert.strictEqual(freshLinter.getFixPassCount(), 0);
+		});
+
+		it("should start a fresh instance at zero fix passes", () => {
+			assert.strictEqual(new Linter().getFixPassCount(), 0);
+		});
+
+		it("should count the fix passes verifyAndFix() makes", () => {
+			const freshLinter = new Linter();
+			const result = freshLinter.verifyAndFix(
+				"var a",
+				{ rules: { "no-var": 2 } },
+				{ filename: "a.js", stats: true },
+			);
+
+			assert.strictEqual(result.output, "let a");
+			assert.isAtLeast(freshLinter.getFixPassCount(), 1);
+		});
+	});
+
 	describe("verifyAndFix()", () => {
 		it("Fixes the code", () => {
 			const messages = linter.verifyAndFix(

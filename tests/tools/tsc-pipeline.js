@@ -29,24 +29,41 @@ const {
 //------------------------------------------------------------------------------
 
 /**
- * Lists the directories `include` covers with a recursive glob.
+ * Lists the directories of sources `include` covers.
+ *
+ * Both glob depths are recognized: a recursive entry takes a whole tree, while
+ * a single-star one takes only that directory's own files — which is how
+ * `lib/linter/` is covered without dragging in the not-yet-annotated
+ * `lib/linter/code-path-analysis/`.
  * @param {any} raw The raw `tsconfig.json` object.
- * @returns {string[]} The directory paths, relative to the project root.
+ * @returns {{ directory: string, recursive: boolean }[]} Each covered
+ * directory, relative to the project root, and how deep its glob reaches.
  */
 function annotatedDirectories(raw) {
 	return raw.include
-		.filter(entry => entry.endsWith("/**/*.js"))
-		.map(entry => entry.slice(0, -"/**/*.js".length));
+		.filter(entry => entry.endsWith("*.js"))
+		.map(entry =>
+			entry.endsWith("/**/*.js")
+				? {
+						directory: entry.slice(0, -"/**/*.js".length),
+						recursive: true,
+					}
+				: {
+						directory: entry.slice(0, -"/*.js".length),
+						recursive: false,
+					},
+		);
 }
 
 /**
- * Lists every JavaScript source in a directory, recursively.
- * @param {string} directory The directory path, relative to the project root.
+ * Lists the JavaScript sources a covered directory's glob matches.
+ * @param {{ directory: string, recursive: boolean }} covered The directory and
+ * how deep its glob reaches.
  * @returns {string[]} The sources' paths, relative to the project root.
  */
-function sourcesIn(directory) {
+function sourcesIn({ directory, recursive }) {
 	return fs
-		.readdirSync(path.join(PROJECT_ROOT, directory), { recursive: true })
+		.readdirSync(path.join(PROJECT_ROOT, directory), { recursive })
 		.map(entry => toPosix(String(entry)))
 		.filter(entry => entry.endsWith(".js"))
 		.map(entry => `${directory}/${entry}`);
@@ -256,12 +273,12 @@ describe("tsc pipeline", () => {
 				"`include` should cover at least one directory of sources",
 			);
 
-			for (const directory of directories) {
-				const sources = sourcesIn(directory);
+			for (const covered of directories) {
+				const sources = sourcesIn(covered);
 
 				assert.isNotEmpty(
 					sources,
-					`"${directory}" should contain JavaScript sources`,
+					`"${covered.directory}" should contain JavaScript sources`,
 				);
 
 				for (const source of sources) {
@@ -282,9 +299,14 @@ describe("tsc pipeline", () => {
 			 * This ties the two halves together, so that widening `include`
 			 * without opting the new files in fails here rather than silently
 			 * type-checking nothing.
+			 *
+			 * A non-recursive entry is held to the same rule for the files it
+			 * does match, which is what keeps a directory that is only partly
+			 * annotated — `lib/linter/`, whose `code-path-analysis/`
+			 * subdirectory is not — honest.
 			 */
-			for (const directory of annotatedDirectories(raw)) {
-				for (const source of sourcesIn(directory)) {
+			for (const covered of annotatedDirectories(raw)) {
+				for (const source of sourcesIn(covered)) {
 					const firstLine = fs
 						.readFileSync(path.join(PROJECT_ROOT, source), "utf8")
 						.split(/\r?\n/u)[0];
