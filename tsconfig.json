@@ -65,5 +65,10 @@
    * ship no usable types of their own. Declaration files produce no output, so
    * including them does not disturb the `dist/types/` layout pinned above.
    */
-  "include": ["lib/config/**/*.js", "lib/shared/**/*.js", "types/**/*.d.ts"]
+  "include": [
+    "lib/config/**/*.js",
+    "lib/languages/**/*.js",
+    "lib/shared/**/*.js",
+    "types/**/*.d.ts"
+  ]
 }
