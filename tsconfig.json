@@ -1,0 +1,34 @@
+{
+  /*
+   * Type-checking and declaration emit for the pure-JS sources: tsc reads the
+   * JSDoc annotations in `lib/` and emits `.d.ts` files to `dist/types/`.
+   * The runtime CJS output is untouched.
+   * See `.shreni/design/2026-09-21-ts-declarations-from-jsdoc.md`.
+   */
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/types",
+
+    /*
+     * Pinned so the emitted layout mirrors the repo (`lib/api.js` ->
+     * `dist/types/lib/api.d.ts`) instead of shifting as `include` grows:
+     * TS 6 fails declaration emit (TS5011) on an inferred common root.
+     */
+    "rootDir": ".",
+    "target": "ES2022",
+    "module": "node16",
+    "moduleResolution": "node16"
+  },
+
+  /*
+   * Expanded bead-by-bead as modules are annotated, so that `pnpm lint:types`
+   * stays green after every individual merge. It cannot be literally empty:
+   * tsc fails a zero-input project with TS18003, so it is seeded with the one
+   * already-annotation-clean leaf module.
+   */
+  "include": ["lib/shared/directives.js"]
+}
