@@ -13230,19 +13230,19 @@ describe("ESLint", () => {
 		let eslint;
 
 		/**
-		 * helper method to delete a file without caring about exceptions
+		 * Helper method to remove a cache path, whatever shape it currently has.
+		 *
+		 * These paths are written into the repository rather than into a
+		 * temporary directory, so an interrupted run can leave one behind. An
+		 * `unlinkSync` that swallows its exception removes a leftover file but
+		 * silently tolerates a leftover *directory*, which then makes every
+		 * subsequent run fail with `EISDIR` instead of just the first --
+		 * permanently red rather than self-healing.
 		 * @param {string} filePath The file path
 		 * @returns {void}
 		 */
 		function doDelete(filePath) {
-			try {
-				fs.unlinkSync(filePath);
-			} catch {
-				/*
-				 * we don't care if the file didn't exist, since our
-				 * intention was to remove the file
-				 */
-			}
+			fs.rmSync(filePath, { force: true, recursive: true });
 		}
 
 		let cacheFilePath;
